@@ -48,17 +48,16 @@ def evaluate_arima_model(train, test, order):
     
     return predictions, mae, mape, rmse
 
-def main():
-    # Load data
-    try:
-        df = pd.read_csv('usd_brl_history.csv')
-        df['data'] = pd.to_datetime(df['data'])
-        df.set_index('data', inplace=True)
-        series = df['valor']
-    except FileNotFoundError:
-        print("Error: 'usd_brl_history.csv' not found. Please run download_data.py first.")
-        sys.exit(1)
+def run_arima_analysis(series):
+    """
+    Runs the complete ARIMA analysis on a time series.
 
+    Args:
+        series (pd.Series): The time series data.
+
+    Returns:
+        dict: A dictionary with the forecast accuracy metrics.
+    """
     # Phase 1: Identification
     print("--- Phase 1: Model Identification ---")
     
@@ -86,8 +85,8 @@ def main():
     plot_pacf(diff_series, ax=axes[2, 0])
     
     plt.tight_layout()
-    plt.savefig('stationarity_plots.png')
-    print("\nStationarity plots saved to 'stationarity_plots.png'")
+    plt.savefig('assets/stationarity_plots.png')
+    print("\nStationarity plots saved to 'assets/stationarity_plots.png'")
 
     # Grid Search for p, d, q (Simplified)
     # Based on differencing, d=1 seems likely. Let's check p and q.
@@ -122,8 +121,8 @@ def main():
     fig, ax = plt.subplots(1, 2, figsize=(16, 6))
     residuals.plot(title="Residuals", ax=ax[0])
     residuals.plot(kind='kde', title='Density', ax=ax[1])
-    plt.savefig('residual_plots.png')
-    print("\nResidual plots saved to 'residual_plots.png'")
+    plt.savefig('assets/residual_plots.png')
+    print("\nResidual plots saved to 'assets/residual_plots.png'")
     
     # Ljung-Box Test
     lb_test = acorr_ljungbox(residuals, lags=[10], return_df=True)
@@ -155,8 +154,8 @@ def main():
     plt.plot(test.index, predictions, color='red', label='Forecast')
     plt.title('ARIMA Forecast vs Actual (Walk-Forward)')
     plt.legend()
-    plt.savefig('forecast_plots.png')
-    print("\nForecast plots saved to 'forecast_plots.png'")
+    plt.savefig('assets/forecast_plots.png')
+    print("\nForecast plots saved to 'assets/forecast_plots.png'")
 
     # Phase 4: Future Forecasting
     print("\n--- Phase 4: Future Forecasting (Until Dec 31, 2025) ---")
@@ -167,7 +166,7 @@ def main():
     
     # Calculate steps to forecast
     last_date = series.index[-1]
-    target_date = datetime(2025, 12, 31)
+    target_date = last_date + timedelta(days=365)
     
     # Create date range for forecast
     future_dates = pd.date_range(start=last_date + timedelta(days=1), end=target_date)
@@ -190,8 +189,8 @@ def main():
     forecast_df.set_index('Date', inplace=True)
     
     # Save to CSV
-    forecast_df.to_csv('future_forecast.csv')
-    print("Future forecast saved to 'future_forecast.csv'")
+    forecast_df.to_csv('assets/future_forecast.csv')
+    print("Future forecast saved to 'assets/future_forecast.csv'")
     
     # Plot Future Forecast
     plt.figure(figsize=(12, 6))
@@ -208,9 +207,11 @@ def main():
     plt.title('BRL/USD Forecast until Dec 2025')
     plt.legend()
     plt.grid(True)
-    plt.savefig('future_forecast_plot.png')
-    print("Future forecast plot saved to 'future_forecast_plot.png'")
+    plt.savefig('assets/future_forecast_plot.png')
+    print("Future forecast plot saved to 'assets/future_forecast_plot.png'")
 
-if __name__ == "__main__":
-    main()
-
+    return {
+        "mae": mae,
+        "mape": mape,
+        "rmse": rmse
+    }
