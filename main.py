@@ -6,6 +6,7 @@ import io
 
 from arima_analysis import run_arima_analysis
 from prophet_analysis import run_prophet_analysis
+from ets_analysis import run_ets_analysis
 
 def download_bcb_data(series_id, start_date, end_date):
     """
@@ -77,11 +78,12 @@ def main():
     # Load data for analysis
     df_prophet = df.rename(columns={'data': 'ds', 'valor': 'y'})
     
-    df_arima = df.set_index('data')['valor']
+    df_series = df.set_index('data')['valor']
 
     # Run analyses
-    arima_metrics = run_arima_analysis(df_arima)
+    arima_metrics = run_arima_analysis(df_series)
     prophet_metrics = run_prophet_analysis(df_prophet)
+    ets_metrics = run_ets_analysis(df_series)
 
     # Compare models
     print("\n--- Model Comparison ---")
@@ -96,6 +98,12 @@ def main():
         print(f"MAE: {prophet_metrics['mae']:.4f}")
         print(f"MAPE: {prophet_metrics['mape']:.4f}")
         print(f"RMSE: {prophet_metrics['rmse']:.4f}")
+
+    if ets_metrics:
+        print("\nETS Metrics:")
+        print(f"MAE: {ets_metrics['mae']:.4f}")
+        print(f"MAPE: {ets_metrics['mape']:.4f}")
+        print(f"RMSE: {ets_metrics['rmse']:.4f}")
 
 if __name__ == "__main__":
     main()
