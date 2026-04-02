@@ -1,10 +1,8 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 from prophet.plot import plot_cross_validation_metric
-from datetime import datetime
 import sys
 import logging
 
@@ -47,11 +45,11 @@ def main():
 
     # 4. Forecasting
     print("\n4. Generating Forecast...")
-    # Create future dataframe until Dec 31, 2025
+    # Create future dataframe: 1 year from last data point
     last_date = df['ds'].max()
-    target_date = datetime(2025, 12, 31)
+    target_date = last_date + pd.DateOffset(years=1)
     days_to_predict = (target_date - last_date).days
-    
+
     print(f"Forecasting {days_to_predict} days into the future (until {target_date.date()})...")
     
     future = model.make_future_dataframe(periods=days_to_predict)
@@ -68,11 +66,13 @@ def main():
     fig1 = model.plot(forecast)
     plt.title('BRL/USD Prophet Forecast')
     plt.savefig('prophet_forecast_plot.png')
+    plt.close()
     print("Forecast plot saved to 'prophet_forecast_plot.png'")
-    
+
     # Components Plot
     fig2 = model.plot_components(forecast)
     plt.savefig('prophet_components.png')
+    plt.close()
     print("Components plot saved to 'prophet_components.png'")
 
     # 6. Cross-Validation & Evaluation
@@ -94,6 +94,7 @@ def main():
         fig3 = plot_cross_validation_metric(df_cv, metric='mape')
         plt.title('Cross-Validation MAPE')
         plt.savefig('prophet_cv_mape.png')
+        plt.close()
         print("CV MAPE plot saved to 'prophet_cv_mape.png'")
         
     except Exception as e:

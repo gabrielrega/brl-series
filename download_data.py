@@ -1,7 +1,15 @@
+import argparse
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-import io
+
+# Known BCB time series IDs
+SERIES_CATALOG = {
+    1:   "USD/BRL exchange rate",
+    432: "SELIC overnight rate (% p.a.)",
+    433: "IPCA monthly inflation (%)",
+    11:  "CDI interbank rate (% p.a.)",
+}
 
 def download_bcb_data(series_id):
     # Calculate dates
@@ -41,10 +49,14 @@ def download_bcb_data(series_id):
         return None
 
 if __name__ == "__main__":
-    # Series ID 1 is the exchange rate (USD/BRL)
-    print("Downloading data...")
+    parser = argparse.ArgumentParser(description="Download BCB time series data")
+    parser.add_argument("--all", action="store_true", help="Also download supplementary series (SELIC, IPCA, CDI)")
+    args = parser.parse_args()
+
+    # Always download the primary USD/BRL exchange rate series
+    print("Downloading USD/BRL exchange rate data...")
     df = download_bcb_data(1)
-    
+
     if df is not None:
         output_file = "usd_brl_history.csv"
         df.to_csv(output_file, index=False)
@@ -53,3 +65,16 @@ if __name__ == "__main__":
         print(df.tail())
     else:
         print("Failed to download data.")
+
+    if args.all:
+        for series_id, description in SERIES_CATALOG.items():
+            if series_id == 1:
+                continue
+            print(f"\nDownloading series {series_id}: {description}")
+            df_extra = download_bcb_data(series_id)
+            if df_extra is not None:
+                fname = f"bcb_series_{series_id}.csv"
+                df_extra.to_csv(fname, index=False)
+                print(f"Saved to {fname}")
+            else:
+                print(f"Failed to download series {series_id}.")

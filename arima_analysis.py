@@ -19,14 +19,14 @@ def check_stationarity(timeseries):
     dftest = adfuller(timeseries, autolag='AIC')
     dfoutput = pd.Series(dftest[0:4], index=['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
     for key,value in dftest[4].items():
-        dfoutput['Critical Value (%s)'%key] = value
+        dfoutput[f'Critical Value ({key})'] = value
     print(dfoutput)
-    
+
     print("\nResults of KPSS Test:")
     kpsstest = kpss(timeseries, regression='c', nlags="auto")
     kpss_output = pd.Series(kpsstest[0:3], index=['Test Statistic','p-value','Lags Used'])
     for key,value in kpsstest[3].items():
-        kpss_output['Critical Value (%s)'%key] = value
+        kpss_output[f'Critical Value ({key})'] = value
     print(kpss_output)
 
 def evaluate_arima_model(train, test, order):
@@ -87,6 +87,7 @@ def main():
     
     plt.tight_layout()
     plt.savefig('stationarity_plots.png')
+    plt.close()
     print("\nStationarity plots saved to 'stationarity_plots.png'")
 
     # Grid Search for p, d, q (Simplified)
@@ -105,7 +106,7 @@ def main():
                 if results.aic < best_aic:
                     best_aic = results.aic
                     best_order = (p, 1, q)
-            except:
+            except Exception:
                 continue
                 
     print(f"\nBest ARIMA Order: {best_order}")
@@ -123,6 +124,7 @@ def main():
     residuals.plot(title="Residuals", ax=ax[0])
     residuals.plot(kind='kde', title='Density', ax=ax[1])
     plt.savefig('residual_plots.png')
+    plt.close()
     print("\nResidual plots saved to 'residual_plots.png'")
     
     # Ljung-Box Test
@@ -156,19 +158,20 @@ def main():
     plt.title('ARIMA Forecast vs Actual (Walk-Forward)')
     plt.legend()
     plt.savefig('forecast_plots.png')
+    plt.close()
     print("\nForecast plots saved to 'forecast_plots.png'")
 
     # Phase 4: Future Forecasting
-    print("\n--- Phase 4: Future Forecasting (Until Dec 31, 2025) ---")
-    
     # Retrain on full dataset
     final_model = ARIMA(series, order=best_order)
     final_model_fit = final_model.fit()
-    
-    # Calculate steps to forecast
+
+    # Calculate steps to forecast: 1 year from last data point
     last_date = series.index[-1]
-    target_date = datetime(2025, 12, 31)
-    
+    target_date = last_date + pd.DateOffset(years=1)
+
+    print(f"\n--- Phase 4: Future Forecasting (Until {target_date.date()}) ---")
+
     # Create date range for forecast
     future_dates = pd.date_range(start=last_date + timedelta(days=1), end=target_date)
     steps = len(future_dates)
@@ -205,10 +208,11 @@ def main():
                      forecast_df['Upper CI'], 
                      color='pink', alpha=0.3, label='95% CI')
     
-    plt.title('BRL/USD Forecast until Dec 2025')
+    plt.title(f'BRL/USD Forecast until {target_date.date()}')
     plt.legend()
     plt.grid(True)
     plt.savefig('future_forecast_plot.png')
+    plt.close()
     print("Future forecast plot saved to 'future_forecast_plot.png'")
 
 if __name__ == "__main__":
