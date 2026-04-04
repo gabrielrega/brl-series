@@ -20,13 +20,18 @@ brl-series/
 ├── prophet_analysis.py     # Prophet-based forecasting with cross-validation
 ├── garch_analysis.py       # GARCH(1,1) volatility modeling and forecast
 ├── var_analysis.py         # VAR model: USD/BRL + SELIC, Granger causality, IRF
+├── generate_report.py      # HTML report: data exploration + all models + consensus comparison
 ├── requirements.txt        # Python dependencies
+├── .github/
+│   └── workflows/
+│       └── monthly_report.yml  # GitHub Actions: runs on 1st of month, emails report
 ├── usd_brl_history.csv     # Input data: date + exchange rate (1,257+ rows)
 ├── bcb_series_432.csv      # SELIC rate data (created by download_data.py --all)
 ├── future_forecast.csv     # ARIMA output: future forecasts with confidence intervals
 ├── prophet_forecast.csv    # Prophet output: full forecast series
 ├── garch_forecast.csv      # GARCH output: 1-year volatility forecast
 ├── var_forecast.csv        # VAR output: USD/BRL + SELIC level forecasts
+├── brl_report.html         # Generated report (created by generate_report.py)
 └── *.png                   # Generated visualizations
 ```
 
@@ -55,6 +60,17 @@ python var_analysis.py
 ```
 
 There is no build system, Makefile, or test suite.
+
+To run everything end-to-end and generate a report:
+
+```bash
+python download_data.py --all
+python arima_analysis.py
+python prophet_analysis.py
+python garch_analysis.py
+python var_analysis.py
+python generate_report.py   # produces brl_report.html
+```
 
 ---
 
@@ -160,6 +176,40 @@ Created by `python download_data.py --all`. Known series:
 - Granger causality test: does SELIC predict USD/BRL?
 - Orthogonalized IRF (20 periods): effect of a SELIC rate shock on BRL
 - Inverts differencing via `cumsum` to recover level forecasts
+
+---
+
+## Monthly Report & GitHub Actions
+
+### `generate_report.py`
+Produces `brl_report.html` — a self-contained HTML file with embedded charts.
+Sections: Executive Summary → Data Exploration (historical only) → ARIMA → Prophet →
+GARCH → VAR → Model Comparison vs BCB Focus consensus.
+
+Loads all forecast CSVs; shows a warning box for any missing file rather than failing.
+Fetches BCB Focus annual consensus (`ExpectativaMercadoAnual`, series "Câmbio") live from the API.
+
+### `.github/workflows/monthly_report.yml`
+GitHub Actions workflow that runs automatically on the **1st of every month at 08:00 UTC**
+and can also be triggered manually from the Actions tab.
+
+**Required GitHub repository secrets** (Settings → Secrets → Actions):
+
+| Secret | Description |
+|---|---|
+| `EMAIL_USERNAME` | Sender Gmail address (e.g. `you@gmail.com`) |
+| `EMAIL_PASSWORD` | Gmail [App Password](https://myaccount.google.com/apppasswords) (requires 2-FA enabled) |
+| `EMAIL_TO` | Recipient address |
+
+**Optional secrets** (sensible defaults apply):
+
+| Secret | Default |
+|---|---|
+| `EMAIL_SERVER` | `smtp.gmail.com` |
+| `EMAIL_PORT` | `465` |
+
+The report is also uploaded as a GitHub Actions artifact (30-day retention) so it can be
+downloaded from the Actions tab even without email.
 
 ---
 

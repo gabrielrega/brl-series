@@ -1,0 +1,88 @@
+name: Monthly USD/BRL Forecast Report
+
+# Runs on the 1st of every month at 08:00 UTC.
+# Can also be triggered manually from the Actions tab.
+on:
+  schedule:
+    - cron: '0 8 1 * *'
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── Data download ──────────────────────────────────────────────────────
+      - name: Download latest BCB data
+        run: python download_data.py --all
+
+      # ── Run models ─────────────────────────────────────────────────────────
+      # continue-on-error so a single model failure doesn't abort the report
+      - name: Run ARIMA analysis
+        run: python arima_analysis.py
+        continue-on-error: true
+
+      - name: Run Prophet analysis
+        run: python prophet_analysis.py
+        continue-on-error: true
+
+      - name: Run GARCH analysis
+        run: python garch_analysis.py
+        continue-on-error: true
+
+      - name: Run VAR analysis
+        run: python var_analysis.py
+        continue-on-error: true
+
+      # ── Generate report ────────────────────────────────────────────────────
+      - name: Generate HTML report
+        run: python generate_report.py
+
+      # ── Upload report as artifact (30-day retention) ───────────────────────
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brl-report-${{ github.run_id }}
+          path: brl_report.html
+          retention-days: 30
+
+      # ── Send email ─────────────────────────────────────────────────────────
+      # Required GitHub secrets:
+      #   EMAIL_USERNAME  - sender address (e.g. yourname@gmail.com)
+      #   EMAIL_PASSWORD  - SMTP app-password (Gmail: Settings > Security > App passwords)
+      #   EMAIL_TO        - recipient address
+      #
+      # Optional secrets (defaults shown):
+      #   EMAIL_SERVER    - SMTP host  (default: smtp.gmail.com)
+      #   EMAIL_PORT      - SMTP port  (default: 465)
+      - name: Set report date
+        run: echo "REPORT_DATE=$(date -u +'%B %Y')" >> "$GITHUB_ENV"
+
+      - name: Send report by email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SERVER || 'smtp.gmail.com' }}
+          server_port: ${{ secrets.EMAIL_PORT || 465 }}
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "USD/BRL Forecast Report — ${{ env.REPORT_DATE }}"
+          to: ${{ secrets.EMAIL_TO }}
+          from: "BRL Forecast Bot <${{ secrets.EMAIL_USERNAME }}>"
+          html_body: file://brl_report.html
+          # Attach the report as well for clients that clip large HTML emails
+          attachments: brl_report.html
