@@ -8,19 +8,29 @@ from datetime import timedelta
 from evaluation import rolling_origin_cv, HORIZON
 
 
+def fit_ets(series):
+    """Single source of truth for the ETS configuration used everywhere.
+
+    Damped additive trend, no seasonal component. Rolling-origin CV on this daily
+    FX series showed the seasonal term was inert (smoothing gamma ~ 1e-8) at every
+    period tried (5, 12, 21, 252), while damping the trend gave the best 60-day
+    forecasts — consistent with an exchange rate behaving close to a random walk.
+    """
+    return ExponentialSmoothing(
+        series,
+        trend='add',
+        damped_trend=True,
+        seasonal=None,
+    ).fit()
+
+
 def ets_forecast(train, future_index):
     """Multi-step forecast used by the shared cross-validation and final-window plot.
 
-    Fits an additive-trend / additive-seasonal ETS on `train` and forecasts
-    len(future_index) steps ahead, aligned positionally to the held-out window.
+    Fits the ETS on `train` and forecasts len(future_index) steps ahead, aligned
+    positionally to the held-out window.
     """
-    fit = ExponentialSmoothing(
-        train,
-        trend='add',
-        seasonal='add',
-        seasonal_periods=12,
-    ).fit()
-    return fit.forecast(len(future_index)).values
+    return fit_ets(train).forecast(len(future_index)).values
 
 def run_ets_analysis(series):
     """
@@ -36,13 +46,8 @@ def run_ets_analysis(series):
 
     # 1. Model Configuration and Training
     print("\n1. Configuring and Training ETS Model...")
-    # Let's try an additive trend and additive seasonality model
-    model = ExponentialSmoothing(
-        series,
-        trend='add',
-        seasonal='add',
-        seasonal_periods=12  # Assuming monthly seasonality
-    ).fit()
+    # Damped additive trend, no seasonality (see fit_ets docstring for the rationale)
+    model = fit_ets(series)
 
     print(model.summary())
 
@@ -70,14 +75,9 @@ def run_ets_analysis(series):
 
     # 3. Future Forecasting
     print("\n3. Future Forecasting...")
-    
+
     # Retrain on full dataset
-    final_model = ExponentialSmoothing(
-        series,
-        trend='add',
-        seasonal='add',
-        seasonal_periods=12
-    ).fit()
+    final_model = fit_ets(series)
     
     # Calculate steps to forecast
     last_date = series.index[-1]

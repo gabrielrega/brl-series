@@ -10,7 +10,7 @@ Foram utilizados três modelos de previsão de séries temporais univariadas:
 
 *   **ARIMA (Autoregressive Integrated Moving Average):** Um modelo estatístico clássico que utiliza os valores passados da série temporal para prever valores futuros.
 *   **Prophet:** Uma biblioteca de previsão de séries temporais de código aberto desenvolvida pelo Facebook. É projetado para ser fácil de usar e robusto para uma ampla variedade de séries temporais.
-*   **ETS (Exponential Smoothing):** Um modelo que atribui pesos exponencialmente decrescentes às observações passadas. É eficaz na modelagem de tendências e sazonalidades.
+*   **ETS (Exponential Smoothing):** Um modelo que atribui pesos exponencialmente decrescentes às observações passadas. Configurado com **tendência aditiva amortecida e sem sazonalidade** — a validação cruzada mostrou que qualquer componente sazonal (períodos de 5, 12, 21 ou 252 dias) era inerte para esta série, enquanto o amortecimento da tendência melhorou as previsões a 60 dias.
 
 ## Metodologia de Avaliação
 
@@ -37,7 +37,7 @@ As métricas utilizadas são o Erro Absoluto Médio (MAE), o Erro Percentual Abs
 | Modelo  | MAE    | MAPE   | RMSE   |
 |---------|--------|--------|--------|
 | ARIMA   | 0.1305 | 0.0236 | 0.1748 |
-| ETS     | 0.1476 | 0.0268 | 0.1966 |
+| ETS     | 0.1340 | 0.0242 | 0.1806 |
 | Prophet | *(a regerar)* | *(a regerar)* | *(a regerar)* |
 
 > Os números de ARIMA e ETS acima foram obtidos sobre os dados em cache (até 2026-01-16). A
