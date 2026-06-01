@@ -7,6 +7,8 @@ import io
 from arima_analysis import run_arima_analysis
 from prophet_analysis import run_prophet_analysis
 from ets_analysis import run_ets_analysis
+from garch_analysis import run_garch_analysis
+from var_analysis import run_var_analysis
 from evaluation import rolling_origin_cv, naive_rw_forecast, HORIZON
 
 def download_bcb_data(series_id, start_date, end_date):
@@ -63,42 +65,74 @@ def main():
 
     # Download data
     print("Downloading data...")
-    # Series ID 1 is the exchange rate (USD/BRL)
     end_date = datetime.now()
     start_date = end_date - timedelta(days=5*365)
-    df = download_bcb_data(1, start_date, end_date)
 
-    if df is not None:
-        output_file = "data/usd_brl_history.csv"
-        df.to_csv(output_file, index=False)
-        print(f"Data saved to {output_file}")
-    else:
-        print("Failed to download data.")
+    # Series 1 is the exchange rate (USD/BRL); series 432 is the SELIC target rate
+    # (needed for the bivariate VAR via Uncovered Interest Rate Parity).
+    df = download_bcb_data(1, start_date, end_date)
+    df_selic = download_bcb_data(432, start_date, end_date)
+
+    if df is None:
+        print("Failed to download exchange-rate data.")
         return
+
+    output_file = "data/usd_brl_history.csv"
+    df.to_csv(output_file, index=False)
+    print(f"Data saved to {output_file}")
+    if df_selic is not None:
+        df_selic.to_csv("data/selic_history.csv", index=False)
+        print("SELIC data saved to data/selic_history.csv")
 
     # Load data for analysis
     df_prophet = df.rename(columns={'data': 'ds', 'valor': 'y'})
-    
+
     df_series = df.set_index('data')['valor']
 
-    # Naive random-walk baseline (the benchmark every model must beat)
+    # Naive random-walk baseline (the benchmark every level model must beat)
     print("\nComputing naive random-walk baseline...")
     naive_metrics = rolling_origin_cv(naive_rw_forecast, df_series, label="Naive RW")
 
-    # Run analyses
+    # Run univariate level analyses
     arima_metrics = run_arima_analysis(df_series)
     prophet_metrics = run_prophet_analysis(df_prophet)
     ets_metrics = run_ets_analysis(df_series)
 
-    # Compare models (all scored on the same rolling-origin CV, horizon=HORIZON)
-    print(f"\n--- Model Comparison ({HORIZON}-day horizon CV) ---")
+    # GARCH targets volatility, not the level: it is scored separately below.
+    garch_metrics = run_garch_analysis(df_series)
+
+    # VAR needs the SELIC series aligned to the exchange rate (inner merge on date).
+    var_metrics = None
+    if df_selic is not None:
+        merged = pd.merge(df, df_selic, on='data', how='inner', suffixes=('_fx', '_selic'))
+        merged = merged.rename(columns={'valor_fx': 'usd_brl', 'valor_selic': 'selic'}).set_index('data').sort_index()
+        var_metrics = run_var_analysis(merged['usd_brl'], merged['selic'])
+    else:
+        print("\nSkipping VAR: SELIC series unavailable.")
+
+    # Level comparison (all scored on the same rolling-origin CV, horizon=HORIZON)
+    print(f"\n--- Level Model Comparison ({HORIZON}-day horizon CV) ---")
     print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
     for name, metrics in (
         ("Naive RW", naive_metrics),
         ("ARIMA", arima_metrics),
         ("ETS", ets_metrics),
         ("Prophet", prophet_metrics),
+        ("VAR", var_metrics),
     ):
+        if metrics:
+            print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} {metrics['rmse']:>8.4f}")
+        else:
+            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8}")
+
+    # Volatility comparison (separate target: realized vol, annualized %).
+    print(f"\n--- Volatility Model Comparison ({HORIZON}-day horizon CV) ---")
+    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
+    vol_rows = []
+    if garch_metrics:
+        vol_rows.append(("Const Vol", garch_metrics.get("baseline")))
+        vol_rows.append(("GARCH", garch_metrics))
+    for name, metrics in vol_rows:
         if metrics:
             print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} {metrics['rmse']:>8.4f}")
         else:
