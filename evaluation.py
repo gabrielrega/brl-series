@@ -5,6 +5,16 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,
 )
 
+
+def naive_rw_forecast(train, future_index):
+    """Random-walk baseline: forecast the last observed value for the whole horizon.
+
+    For an exchange rate (close to a random walk) this is the benchmark every model
+    must beat to justify its complexity. Plugged into the same rolling_origin_cv as
+    the real models so the comparison is apples-to-apples.
+    """
+    return np.full(len(future_index), train.iloc[-1])
+
 # Shared cross-validation parameters (in observations / business days).
 # Using the same scheme for every model is what makes their metrics comparable.
 INITIAL = 750   # ~3 years of training before the first forecast

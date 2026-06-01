@@ -7,6 +7,7 @@ import io
 from arima_analysis import run_arima_analysis
 from prophet_analysis import run_prophet_analysis
 from ets_analysis import run_ets_analysis
+from evaluation import rolling_origin_cv, naive_rw_forecast, HORIZON
 
 def download_bcb_data(series_id, start_date, end_date):
     """
@@ -80,30 +81,28 @@ def main():
     
     df_series = df.set_index('data')['valor']
 
+    # Naive random-walk baseline (the benchmark every model must beat)
+    print("\nComputing naive random-walk baseline...")
+    naive_metrics = rolling_origin_cv(naive_rw_forecast, df_series, label="Naive RW")
+
     # Run analyses
     arima_metrics = run_arima_analysis(df_series)
     prophet_metrics = run_prophet_analysis(df_prophet)
     ets_metrics = run_ets_analysis(df_series)
 
-    # Compare models
-    print("\n--- Model Comparison ---")
-    if arima_metrics:
-        print("\nARIMA Metrics:")
-        print(f"MAE: {arima_metrics['mae']:.4f}")
-        print(f"MAPE: {arima_metrics['mape']:.4f}")
-        print(f"RMSE: {arima_metrics['rmse']:.4f}")
-
-    if prophet_metrics:
-        print("\nProphet Metrics:")
-        print(f"MAE: {prophet_metrics['mae']:.4f}")
-        print(f"MAPE: {prophet_metrics['mape']:.4f}")
-        print(f"RMSE: {prophet_metrics['rmse']:.4f}")
-
-    if ets_metrics:
-        print("\nETS Metrics:")
-        print(f"MAE: {ets_metrics['mae']:.4f}")
-        print(f"MAPE: {ets_metrics['mape']:.4f}")
-        print(f"RMSE: {ets_metrics['rmse']:.4f}")
+    # Compare models (all scored on the same rolling-origin CV, horizon=HORIZON)
+    print(f"\n--- Model Comparison ({HORIZON}-day horizon CV) ---")
+    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
+    for name, metrics in (
+        ("Naive RW", naive_metrics),
+        ("ARIMA", arima_metrics),
+        ("ETS", ets_metrics),
+        ("Prophet", prophet_metrics),
+    ):
+        if metrics:
+            print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} {metrics['rmse']:>8.4f}")
+        else:
+            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8}")
 
 if __name__ == "__main__":
     main()
