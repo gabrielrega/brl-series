@@ -10,12 +10,13 @@ This project performs a time series analysis of the BRL/USD exchange rate using 
     cd brl-series
     ```
 
-2.  **Create a virtual environment and install dependencies:**
+2.  **Create a virtual environment and install dependencies (using [uv](https://docs.astral.sh/uv/)):**
     ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    pip install -r requirements.txt
+    uv venv
+    uv pip install -r requirements.txt
     ```
+    Then run commands with `uv run python main.py`, or activate the environment
+    (`.venv\Scripts\activate` on Windows, `source .venv/bin/activate` otherwise).
 
 ## Usage
 

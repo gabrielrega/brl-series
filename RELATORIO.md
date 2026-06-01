@@ -36,40 +36,41 @@ qualquer modelo precisa superar para justificar sua complexidade.
 ## Resultados
 
 As métricas utilizadas são o Erro Absoluto Médio (MAE), o Erro Percentual Absoluto Médio
-(MAPE) e a Raiz do Erro Quadrático Médio (RMSE), todas em validação cruzada de 4 folds.
+(MAPE) e a Raiz do Erro Quadrático Médio (RMSE), todas em validação cruzada de 4 folds. Dados:
+1254 observações de 2021-06-02 a 2026-05-29.
 
 | Modelo        | MAE    | MAPE   | RMSE   |
 |---------------|--------|--------|--------|
-| **Naive RW**  | 0.1340 | 0.0242 | 0.1806 |
-| ARIMA         | 0.1305 | 0.0236 | 0.1748 |
-| ETS           | 0.1340 | 0.0242 | 0.1806 |
-| Prophet       | *(a regerar)* | *(a regerar)* | *(a regerar)* |
-
-> Os números acima foram obtidos sobre os dados em cache (até 2026-01-16). A linha do Prophet
-> será preenchida ao regenerar o relatório com `python main.py` (requer o pacote `prophet`
-> instalado), garantindo que os quatro usem exatamente os mesmos cortes.
+| **Naive RW**  | 0.1753 | 0.0308 | 0.2296 |
+| ARIMA         | 0.1799 | 0.0317 | 0.2348 |
+| ETS           | 0.1753 | 0.0308 | 0.2296 |
+| Prophet       | 0.1975 | 0.0348 | 0.2465 |
 
 ## Análise dos Resultados
 
-A leitura crítica vem da comparação com o baseline:
+A leitura crítica vem da comparação com o baseline — e o resultado é contundente:
 
-*   O **ARIMA** tem o melhor desempenho, mas supera o random walk por uma margem **mínima**
-    (MAPE 2,36% vs 2,42% — cerca de 2,5% de melhora relativa).
+*   O **random walk ingênuo é o melhor** (empatado com o ETS). Nenhum modelo o supera.
 *   O **ETS** (tendência amortecida, sem sazonalidade) é **numericamente idêntico ao random
-    walk**: a configuração ótima encontrada colapsa para "prever o último valor". Ou seja, o
-    ETS não adiciona informação além do benchmark.
-*   Nenhum modelo univariado supera o passeio aleatório de forma material a 60 dias.
+    walk**: a configuração ótima colapsa para "prever o último valor", sem adicionar informação.
+*   O **ARIMA** fica **pior** que o ingênuo (MAPE 3,17% vs 3,08%), apesar de toda a sua
+    complexidade (identificação, grid search, diagnósticos de resíduo).
+*   O **Prophet** é o pior dos quatro (MAPE 3,48%).
 
 Este resultado é esperado e bem documentado na literatura (o *puzzle* de Meese-Rogoff): taxas
 de câmbio se comportam muito próximo de um passeio aleatório, e modelos univariados raramente
 batem o ingênuo fora da amostra em horizontes de meses.
 
+> **Sensibilidade temporal:** com os dados em cache até 2026-01-16, o ARIMA superava o RW por
+> uma margem mínima; com os dados até 2026-05-29 ele passa a perder para o ingênuo. A própria
+> instabilidade do ranking reforça que as diferenças entre os modelos são ruído, não sinal.
+
 ## Conclusão
 
-Para a série BRL/USD, sob avaliação justa, o **ARIMA** é o melhor modelo — mas a vantagem sobre
-o baseline ingênuo é pequena demais para ter relevância prática, e o ETS sequer se distingue do
-random walk. A conclusão honesta é que, neste horizonte, **prever "amanhã ≈ hoje" é tão bom
-quanto os modelos univariados testados**.
+Para a série BRL/USD, sob avaliação justa e contra um baseline, **o passeio aleatório ("amanhã
+≈ hoje") é tão bom ou melhor que qualquer um dos três modelos testados**. O ETS não se
+distingue dele; ARIMA e Prophet ficam atrás. Nenhum dos modelos univariados justifica sua
+complexidade neste horizonte.
 
 Para genuinamente melhorar a previsão seria necessário ir além de modelos univariados — por
 exemplo, incorporar variáveis exógenas (diferencial de juros, commodities, índice do dólar) ou
