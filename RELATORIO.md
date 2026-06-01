@@ -12,26 +12,51 @@ Foram utilizados três modelos de previsão de séries temporais univariadas:
 *   **Prophet:** Uma biblioteca de previsão de séries temporais de código aberto desenvolvida pelo Facebook. É projetado para ser fácil de usar e robusto para uma ampla variedade de séries temporais.
 *   **ETS (Exponential Smoothing):** Um modelo que atribui pesos exponencialmente decrescentes às observações passadas. É eficaz na modelagem de tendências e sazonalidades.
 
+## Metodologia de Avaliação
+
+Para que a comparação entre os modelos seja justa, **os três são avaliados sob o mesmo
+protocolo**: validação cruzada *rolling-origin* (origem móvel), implementada em
+`evaluation.py`. A cada corte, o modelo é treinado apenas com os dados até aquele ponto e
+prevê o mesmo horizonte de 60 dias úteis, nas mesmas datas reais. As métricas (MAE, MAPE,
+RMSE) são calculadas sobre o conjunto agrupado de todas as previsões.
+
+Parâmetros: janela inicial de treino de 750 observações (~3 anos), passo de 120 observações
+(~6 meses) entre cortes e horizonte de 60 observações (~3 meses) — resultando em 4 folds.
+
+> **Nota metodológica:** versões anteriores deste relatório comparavam métricas calculadas de
+> formas diferentes para cada modelo (ARIMA por *walk-forward* de 1 passo, ETS por previsão
+> estática com erro de alinhamento, Prophet por *cross-validation*). Isso favorecia
+> artificialmente o ARIMA (MAPE de ~0,4%, irrealista para câmbio). Sob o protocolo unificado,
+> os erros refletem a real dificuldade de prever a série a 60 dias.
+
 ## Resultados
 
-A tabela a seguir apresenta as métricas de avaliação de cada modelo. As métricas utilizadas foram o Erro Absoluto Médio (MAE), o Erro Percentual Absoluto Médio (MAPE) e a Raiz do Erro Quadrático Médio (RMSE).
+As métricas utilizadas são o Erro Absoluto Médio (MAE), o Erro Percentual Absoluto Médio
+(MAPE) e a Raiz do Erro Quadrático Médio (RMSE), todas em validação cruzada de 4 folds.
 
 | Modelo  | MAE    | MAPE   | RMSE   |
 |---------|--------|--------|--------|
-| ARIMA   | 0.0220 | 0.0041 | 0.0294 |
-| Prophet | 0.1894 | 0.0333 | 0.2204 |
-| ETS     | 0.0529 | 0.0097 | 0.0733 |
+| ARIMA   | 0.1305 | 0.0236 | 0.1748 |
+| ETS     | 0.1476 | 0.0268 | 0.1966 |
+| Prophet | *(a regerar)* | *(a regerar)* | *(a regerar)* |
+
+> Os números de ARIMA e ETS acima foram obtidos sobre os dados em cache (até 2026-01-16). A
+> linha do Prophet será preenchida ao regenerar o relatório com `python main.py` (requer o
+> pacote `prophet` instalado), garantindo que os três usem exatamente os mesmos cortes.
 
 ## Análise dos Resultados
 
-Com base nas métricas de avaliação, o modelo **ARIMA** apresentou o melhor desempenho, com os menores valores de MAE, MAPE e RMSE. Isso indica que o modelo ARIMA foi o mais preciso na previsão da taxa de câmbio BRL/USD no período de teste.
-
-O modelo **ETS** ficou em segundo lugar, com um desempenho razoável, mas inferior ao do ARIMA.
-
-O modelo **Prophet**, por outro lado, teve o pior desempenho entre os três, com erros significativamente maiores.
+Sob o protocolo unificado, o modelo **ARIMA** ainda apresenta o melhor desempenho, com os
+menores MAE, MAPE e RMSE, seguido de perto pelo **ETS**. A diferença entre os dois é pequena,
+o que é esperado para uma série de câmbio próxima de um passeio aleatório. A linha do Prophet
+será confirmada na regeneração.
 
 ## Conclusão
 
-Para a série temporal da taxa de câmbio BRL/USD analisada, o modelo ARIMA foi o que apresentou o melhor desempenho. Recomenda-se a utilização do modelo ARIMA para futuras previsões desta série.
+Para a série temporal da taxa de câmbio BRL/USD analisada, o modelo ARIMA apresentou o melhor
+desempenho sob avaliação justa, com o ETS como alternativa competitiva. Vale ressaltar que, a
+um horizonte de 60 dias, os erros (~2-3% de MAPE) mostram que nenhum dos modelos univariados
+prevê o câmbio com alta precisão — coerente com a natureza da série.
 
-É importante ressaltar que o desempenho dos modelos pode variar com o tempo e com as condições do mercado. Portanto, é recomendável reavaliar e recalibrar os modelos periodicamente.
+É importante ressaltar que o desempenho dos modelos pode variar com o tempo e com as condições
+do mercado. Portanto, é recomendável reavaliar e recalibrar os modelos periodicamente.

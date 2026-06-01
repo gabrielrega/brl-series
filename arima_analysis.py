@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 import warnings
 import sys
 
+from evaluation import rolling_origin_cv, HORIZON
+
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")
 
@@ -29,24 +31,14 @@ def check_stationarity(timeseries):
         kpss_output['Critical Value (%s)'%key] = value
     print(kpss_output)
 
-def evaluate_arima_model(train, test, order):
-    history = [x for x in train]
-    predictions = list()
-    # Walk-forward validation
-    for t in range(len(test)):
-        model = ARIMA(history, order=order)
-        model_fit = model.fit()
-        output = model_fit.forecast()
-        yhat = output[0]
-        predictions.append(yhat)
-        obs = test[t]
-        history.append(obs)
-    
-    mae = mean_absolute_error(test, predictions)
-    mape = mean_absolute_percentage_error(test, predictions)
-    rmse = np.sqrt(mean_squared_error(test, predictions))
-    
-    return predictions, mae, mape, rmse
+def arima_forecast(train, future_index, order):
+    """Multi-step forecast used by the shared cross-validation and final-window plot.
+
+    Fits an ARIMA(order) on `train` and forecasts len(future_index) steps ahead,
+    aligned positionally to the held-out observations.
+    """
+    model_fit = ARIMA(train, order=order).fit()
+    return model_fit.get_forecast(steps=len(future_index)).predicted_mean.values
 
 def run_arima_analysis(series):
     """
@@ -133,40 +125,41 @@ def run_arima_analysis(series):
     jb_score, p_value = jarque_bera(residuals)
     print(f"\nJarque-Bera Test: Score={jb_score:.2f}, p-value={p_value:.4f}")
 
-    # Phase 3: Forecasting & Evaluation
+    # Phase 3: Forecasting & Evaluation (shared rolling-origin cross-validation)
     print("\n--- Phase 3: Forecasting & Evaluation ---")
-    
-    train_size = int(len(series) - 60)
-    train, test = series[0:train_size], series[train_size:len(series)]
-    
-    print(f"Training size: {len(train)}, Test size: {len(test)}")
-    
-    predictions, mae, mape, rmse = evaluate_arima_model(train, test.values, best_order)
-    
-    print(f"\nForecast Accuracy Metrics:")
+
+    cv = rolling_origin_cv(
+        lambda tr, idx: arima_forecast(tr, idx, best_order),
+        series,
+        label="ARIMA",
+    )
+    mae, mape, rmse = cv["mae"], cv["mape"], cv["rmse"]
+
+    print(f"\nForecast Accuracy Metrics ({cv['n_folds']}-fold CV, horizon={HORIZON}):")
     print(f"MAE: {mae:.4f}")
     print(f"MAPE: {mape:.4f}")
     print(f"RMSE: {rmse:.4f}")
-    
-    # Plot Forecasts
+
+    # Plot the final held-out window (multi-step forecast vs actual)
+    test = series.iloc[-HORIZON:]
+    predictions = arima_forecast(series.iloc[:-HORIZON], test.index, best_order)
     plt.figure(figsize=(12, 6))
     plt.plot(test.index, test.values, label='Actual')
     plt.plot(test.index, predictions, color='red', label='Forecast')
-    plt.title('ARIMA Forecast vs Actual (Walk-Forward)')
+    plt.title(f'ARIMA Forecast vs Actual (last {HORIZON} days, multi-step)')
     plt.legend()
     plt.savefig('assets/forecast_plots.png')
     print("\nForecast plots saved to 'assets/forecast_plots.png'")
 
-    # Phase 4: Future Forecasting
-    print("\n--- Phase 4: Future Forecasting (Until Dec 31, 2025) ---")
-    
+    # Phase 4: Future Forecasting (one year beyond the last observation)
     # Retrain on full dataset
     final_model = ARIMA(series, order=best_order)
     final_model_fit = final_model.fit()
-    
+
     # Calculate steps to forecast
     last_date = series.index[-1]
     target_date = last_date + timedelta(days=365)
+    print(f"\n--- Phase 4: Future Forecasting (until {target_date.date()}) ---")
     
     # Create date range for forecast
     future_dates = pd.date_range(start=last_date + timedelta(days=1), end=target_date)
@@ -204,7 +197,7 @@ def run_arima_analysis(series):
                      forecast_df['Upper CI'], 
                      color='pink', alpha=0.3, label='95% CI')
     
-    plt.title('BRL/USD Forecast until Dec 2025')
+    plt.title(f'BRL/USD ARIMA Forecast: next {steps} days (until {target_date.date()})')
     plt.legend()
     plt.grid(True)
     plt.savefig('assets/future_forecast_plot.png')

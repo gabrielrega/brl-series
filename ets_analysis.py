@@ -5,6 +5,23 @@ from statsmodels.tsa.api import ExponentialSmoothing
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 from datetime import timedelta
 
+from evaluation import rolling_origin_cv, HORIZON
+
+
+def ets_forecast(train, future_index):
+    """Multi-step forecast used by the shared cross-validation and final-window plot.
+
+    Fits an additive-trend / additive-seasonal ETS on `train` and forecasts
+    len(future_index) steps ahead, aligned positionally to the held-out window.
+    """
+    fit = ExponentialSmoothing(
+        train,
+        trend='add',
+        seasonal='add',
+        seasonal_periods=12,
+    ).fit()
+    return fit.forecast(len(future_index)).values
+
 def run_ets_analysis(series):
     """
     Runs the complete ETS analysis on a time series.
@@ -29,30 +46,24 @@ def run_ets_analysis(series):
 
     print(model.summary())
 
-    # 2. Forecasting & Evaluation
+    # 2. Forecasting & Evaluation (shared rolling-origin cross-validation)
     print("\n2. Forecasting & Evaluation...")
-    train_size = int(len(series) - 60)
-    train, test = series[0:train_size], series[train_size:len(series)]
 
-    print(f"Training size: {len(train)}, Test size: {len(test)}")
+    cv = rolling_origin_cv(ets_forecast, series, label="ETS")
+    mae, mape, rmse = cv["mae"], cv["mape"], cv["rmse"]
 
-    # Walk-forward validation is not standard for ETS, so we'll do a simple forecast
-    predictions = model.forecast(len(test))
-
-    mae = mean_absolute_error(test, predictions)
-    mape = mean_absolute_percentage_error(test, predictions)
-    rmse = np.sqrt(mean_squared_error(test, predictions))
-
-    print(f"\nForecast Accuracy Metrics:")
+    print(f"\nForecast Accuracy Metrics ({cv['n_folds']}-fold CV, horizon={HORIZON}):")
     print(f"MAE: {mae:.4f}")
     print(f"MAPE: {mape:.4f}")
     print(f"RMSE: {rmse:.4f}")
 
-    # Plot Forecasts
+    # Plot the final held-out window (multi-step forecast vs actual)
+    test = series.iloc[-HORIZON:]
+    predictions = ets_forecast(series.iloc[:-HORIZON], test.index)
     plt.figure(figsize=(12, 6))
     plt.plot(test.index, test.values, label='Actual')
     plt.plot(test.index, predictions, color='red', label='Forecast')
-    plt.title('ETS Forecast vs Actual')
+    plt.title(f'ETS Forecast vs Actual (last {HORIZON} days, multi-step)')
     plt.legend()
     plt.savefig('assets/ets_forecast_plots.png')
     print("\nForecast plots saved to 'assets/ets_forecast_plots.png'")

@@ -2,15 +2,43 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from prophet import Prophet
-from prophet.diagnostics import cross_validation, performance_metrics
-from prophet.plot import plot_cross_validation_metric
 from datetime import datetime, timedelta
 import sys
 import logging
 
+from evaluation import rolling_origin_cv, HORIZON
+
 # Configure logging
 logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 logging.getLogger('prophet').setLevel(logging.WARNING)
+
+
+def _build_prophet():
+    """Single source of truth for the Prophet configuration used everywhere."""
+    model = Prophet(
+        daily_seasonality=False,
+        weekly_seasonality=True,
+        yearly_seasonality=True,
+        changepoint_prior_scale=0.05,
+        seasonality_mode='additive',
+    )
+    model.add_country_holidays(country_name='BR')
+    return model
+
+
+def prophet_forecast(train, future_index):
+    """Multi-step forecast used by the shared cross-validation.
+
+    Fits a fresh Prophet on `train` (a date-indexed Series) and predicts exactly
+    at the held-out dates in `future_index`, so it lines up with the same target
+    business days used to score ARIMA and ETS.
+    """
+    dfp = train.reset_index()
+    dfp.columns = ['ds', 'y']
+    model = _build_prophet()
+    model.fit(dfp)
+    future = pd.DataFrame({'ds': pd.to_datetime(future_index)})
+    return model.predict(future)['yhat'].values
 
 def run_prophet_analysis(df):
     """
@@ -27,15 +55,8 @@ def run_prophet_analysis(df):
     # 2. Model Configuration
     print("\n2. Configuring Prophet Model...")
     # Daily data, so daily_seasonality=False (unless intraday), weekly and yearly are relevant.
-    # Adding Brazil holidays.
-    model = Prophet(
-        daily_seasonality=False,
-        weekly_seasonality=True,
-        yearly_seasonality=True,
-        changepoint_prior_scale=0.05, # Default is 0.05, increasing makes it more flexible
-        seasonality_mode='additive' # Additive is usually good for exchange rates unless variance grows with trend
-    )
-    model.add_country_holidays(country_name='BR')
+    # Brazil holidays added inside _build_prophet (shared with the CV folds).
+    model = _build_prophet()
 
     # 3. Model Training
     print("\n3. Training Model...")
@@ -70,35 +91,22 @@ def run_prophet_analysis(df):
     plt.savefig('assets/prophet_components.png')
     print("Components plot saved to 'assets/prophet_components.png'")
 
-    # 6. Cross-Validation & Evaluation
+    # 6. Cross-Validation & Evaluation (shared rolling-origin CV, same as ARIMA/ETS)
     print("\n6. Running Cross-Validation (this may take time)...")
-    # Initial training period: 3 years (~1095 days)
-    # Period: 180 days
-    # Horizon: 60 days
-    try:
-        df_cv = cross_validation(model, initial='1095 days', period='180 days', horizon='60 days')
-        
-        df_p = performance_metrics(df_cv)
-        print("\nPerformance Metrics (Average):")
-        metrics = df_p[['horizon', 'mae', 'mape', 'rmse']].mean()
-        print(metrics)
-        
-        df_p.to_csv('assets/prophet_cv_metrics.csv')
-        print("CV metrics saved to 'assets/prophet_cv_metrics.csv'")
-        
-        # Plot MAPE
-        fig3 = plot_cross_validation_metric(df_cv, metric='mape')
-        plt.title('Cross-Validation MAPE')
-        plt.savefig('assets/prophet_cv_mape.png')
-        print("CV MAPE plot saved to 'assets/prophet_cv_mape.png'")
-        
-        return {
-            "mae": metrics['mae'],
-            "mape": metrics['mape'],
-            "rmse": metrics['rmse']
-        }
-        
-    except Exception as e:
-        print(f"Cross-validation failed: {e}")
-        print("Skipping CV metrics.")
+    series = df.set_index('ds')['y']
+    cv = rolling_origin_cv(prophet_forecast, series, label="Prophet")
+
+    if cv is None:
+        print("Cross-validation produced no folds. Skipping CV metrics.")
         return None
+
+    print(f"\nForecast Accuracy Metrics ({cv['n_folds']}-fold CV, horizon={HORIZON}):")
+    print(f"MAE: {cv['mae']:.4f}")
+    print(f"MAPE: {cv['mape']:.4f}")
+    print(f"RMSE: {cv['rmse']:.4f}")
+
+    return {
+        "mae": cv["mae"],
+        "mape": cv["mape"],
+        "rmse": cv["rmse"],
+    }
