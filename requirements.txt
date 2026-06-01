@@ -1,8 +1,8 @@
-requests
-pandas
-matplotlib
-statsmodels
-scikit-learn
-prophet
-ipykernel
-jupytext
+requests==2.33.1
+pandas==2.2.2
+matplotlib==3.10.8
+statsmodels==0.14.6
+scikit-learn==1.8.0
+prophet>=1.1.5
+ipykernel==7.1.0
+jupytext>=1.16.0

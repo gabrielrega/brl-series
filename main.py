@@ -56,9 +56,9 @@ def main():
     """
     Main function to run the time series analysis.
     """
-    # Create data directory if it doesn't exist
-    if not os.path.exists('data'):
-        os.makedirs('data')
+    # Create output directories if they don't exist
+    for directory in ('data', 'assets'):
+        os.makedirs(directory, exist_ok=True)
 
     # Download data
     print("Downloading data...")
