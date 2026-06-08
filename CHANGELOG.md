@@ -7,6 +7,15 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não lançado]
 
 ### Adicionado
+- Teste de Diebold-Mariano (`evaluation.diebold_mariano`) com correção de
+  amostra pequena de Harvey-Leybourne-Newbold e variância de longo prazo
+  Newey-West (truncada em `horizon-1`), para aferir se a diferença de acurácia
+  entre dois modelos é significativa em vez de comparar só o MAE pontual.
+- A CV rolling-origin (nível e volatilidade) passa a devolver os erros por
+  ponto (`errors`, indexados por `(cutoff, data)`) para alimentar o DM.
+- `main.py` ganha colunas `DM vs RW` (nível) e `DM vs CV` (volatilidade).
+- Teste offline do DM (`test_models.py`): erros idênticos → stat≈0/p≈1; modelo
+  uniformemente melhor → stat negativo significativo; sem interseção → None.
 - Análise GARCH(1,1) portada para a estrutura modular (`garch_analysis.py`,
   `run_garch_analysis`): estimação com inovação t de Student (fallback Normal),
   teste ARCH-LM, diagnósticos de resíduos e previsão de volatilidade a 1 ano.
@@ -24,6 +33,9 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 ### Modificado
 - VAR entra na tabela de comparação de nível usando a mesma CV
   (initial=750, period=120, horizon=60) dos demais modelos univariados.
+- `PERIOD` da CV reduzido de 120 para 60 (janelas de teste contíguas): de 4 para
+  8 folds. Com mais folds e o teste DM, a vantagem do VAR sobre o random walk
+  deixa de ser detectável (p = 0.87) — resultado mais honesto e Meese-Rogoff.
 - Supressão de warnings passa a ser por categoria (ARIMA/VAR/GARCH) em vez de
   `filterwarnings("ignore")` global: silencia apenas o ruído benigno (índice sem
   frequência, KPSS nas bordas da tabela, escala/valores iniciais da `arch`) e

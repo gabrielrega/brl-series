@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+from scipy.stats import t as student_t
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
@@ -18,7 +20,7 @@ def naive_rw_forecast(train, future_index):
 # Shared cross-validation parameters (in observations / business days).
 # Using the same scheme for every model is what makes their metrics comparable.
 INITIAL = 750   # ~3 years of training before the first forecast
-PERIOD = 120    # ~6 months between successive cutoffs
+PERIOD = 60     # step between cutoffs; == HORIZON tiles the test windows
 HORIZON = 60    # ~3 months forecast horizon evaluated at each cutoff
 
 
@@ -39,11 +41,13 @@ def rolling_origin_cv(forecast_fn, series, initial=INITIAL, period=PERIOD,
         label (str): model name, used only for logging.
 
     Returns:
-        dict with pooled 'mae', 'mape', 'rmse' across all folds and 'n_folds',
-        or None if no fold could be evaluated.
+        dict with pooled 'mae', 'mape', 'rmse' across all folds, 'n_folds' and
+        'errors' (a pd.Series of actual-minus-pred indexed by a (cutoff, date)
+        MultiIndex, so two models can be aligned point-by-point for a
+        Diebold-Mariano test). None if no fold could be evaluated.
     """
     n = len(series)
-    actuals, preds = [], []
+    actuals, preds, keys = [], [], []
     folds = 0
 
     cutoff = initial
@@ -64,6 +68,7 @@ def rolling_origin_cv(forecast_fn, series, initial=INITIAL, period=PERIOD,
 
         actuals.extend(test.values.tolist())
         preds.extend(yhat[:len(test)].tolist())
+        keys.extend((cutoff, d) for d in test.index)
         folds += 1
         cutoff += period
 
@@ -72,12 +77,15 @@ def rolling_origin_cv(forecast_fn, series, initial=INITIAL, period=PERIOD,
 
     actuals = np.array(actuals)
     preds = np.array(preds)
+    errors = pd.Series(actuals - preds,
+                       index=pd.MultiIndex.from_tuples(keys, names=["cutoff", "date"]))
     print(f"  [{label}] {folds} folds, {len(preds)} pooled predictions")
     return {
         "mae": mean_absolute_error(actuals, preds),
         "mape": mean_absolute_percentage_error(actuals, preds),
         "rmse": np.sqrt(mean_squared_error(actuals, preds)),
         "n_folds": folds,
+        "errors": errors,
     }
 
 
@@ -135,11 +143,13 @@ def rolling_origin_vol_cv(vol_forecast_fn, returns, initial=INITIAL, period=PERI
         label (str): model name, used only for logging.
 
     Returns:
-        dict with pooled 'mae', 'mape', 'rmse' (in annualized vol points) and
-        'n_folds', or None if no fold could be evaluated.
+        dict with pooled 'mae', 'mape', 'rmse' (in annualized vol points),
+        'n_folds' and 'errors' (a pd.Series of realized-minus-forecast indexed by
+        cutoff, one per fold, for a Diebold-Mariano test). None if no fold could
+        be evaluated.
     """
     n = len(returns)
-    actuals, preds = [], []
+    actuals, preds, keys = [], [], []
     folds = 0
 
     cutoff = initial
@@ -155,6 +165,7 @@ def rolling_origin_vol_cv(vol_forecast_fn, returns, initial=INITIAL, period=PERI
 
         actuals.append(realized_vol(test))
         preds.append(vhat)
+        keys.append(cutoff)
         folds += 1
         cutoff += period
 
@@ -163,10 +174,81 @@ def rolling_origin_vol_cv(vol_forecast_fn, returns, initial=INITIAL, period=PERI
 
     actuals = np.array(actuals)
     preds = np.array(preds)
+    errors = pd.Series(actuals - preds, index=pd.Index(keys, name="cutoff"))
     print(f"  [{label}] {folds} folds, {len(preds)} pooled vol forecasts")
     return {
         "mae": mean_absolute_error(actuals, preds),
         "mape": mean_absolute_percentage_error(actuals, preds),
         "rmse": np.sqrt(mean_squared_error(actuals, preds)),
         "n_folds": folds,
+        "errors": errors,
     }
+
+
+# --- Significance: Diebold-Mariano -----------------------------------------
+# A lower MAE doesn't mean a model is *significantly* better — with only a
+# handful of folds the gap can be noise. Diebold & Mariano (1995) test whether
+# two forecasts have equal expected loss on the same target points.
+
+
+def diebold_mariano(errors_model, errors_bench, horizon=HORIZON, loss="abs"):
+    """Diebold-Mariano test of equal predictive accuracy (HLN small-sample corrected).
+
+    H0: `errors_model` and `errors_bench` carry the same expected loss. The two
+    error series are aligned on their common index first (the (cutoff, date) keys
+    produced by the rolling-origin CV), so only points both models forecast are
+    compared. A **negative** statistic means the model beats the benchmark; the
+    p-value (two-sided, Student-t with n-1 df) says whether that gap is real.
+
+    Multi-step forecasts overlap, so the loss-differential is serially
+    correlated: the long-run variance uses a Newey-West/Bartlett estimator
+    truncated at `horizon-1` lags, and the statistic carries the Harvey,
+    Leybourne & Newbold (1997) finite-sample correction.
+
+    Args:
+        errors_model, errors_bench (pd.Series): actual-minus-forecast errors,
+            indexed compatibly (e.g. both from rolling_origin_cv).
+        horizon (int): forecast horizon, sets the autocorrelation truncation.
+        loss ('abs'|'sq'): absolute loss (matches the MAE table) or squared.
+
+    Returns:
+        dict with 'stat', 'p_value', 'n' (aligned points) and 'mean_diff'
+        (mean loss differential, model minus benchmark; negative => model wins),
+        or None if there is no overlap or the variance is degenerate.
+    """
+    common = errors_model.index.intersection(errors_bench.index)
+    if len(common) < 3:
+        return None
+
+    em = np.asarray(errors_model.loc[common], dtype=float)
+    eb = np.asarray(errors_bench.loc[common], dtype=float)
+    lm = np.abs(em) if loss == "abs" else em ** 2
+    lb = np.abs(eb) if loss == "abs" else eb ** 2
+
+    d = lm - lb
+    T = len(d)
+    dbar = d.mean()
+
+    # Newey-West long-run variance, Bartlett weights, truncated at horizon-1
+    # (the MA order of optimal h-step forecast errors); guaranteed non-negative.
+    h = max(int(horizon), 1)
+    gamma0 = np.mean((d - dbar) ** 2)
+    var = gamma0
+    for k in range(1, min(h, T)):
+        cov = np.mean((d[k:] - dbar) * (d[:-k] - dbar))
+        var += 2.0 * (1.0 - k / h) * cov
+    var_dbar = var / T
+    if var_dbar <= 0:
+        # Degenerate loss-differential. Zero variance with zero mean means the
+        # two forecasts are indistinguishable (no evidence against H0); a nonzero
+        # mean with zero variance is pathological, so we decline to test.
+        if abs(dbar) < 1e-12:
+            return {"stat": 0.0, "p_value": 1.0, "n": T, "mean_diff": 0.0}
+        return None
+
+    dm = dbar / np.sqrt(var_dbar)
+    # Harvey, Leybourne & Newbold (1997) finite-sample correction
+    corr = np.sqrt(max((T + 1 - 2 * h + h * (h - 1) / T) / T, 0.0))
+    dm_hln = dm * corr
+    p_value = 2 * student_t.cdf(-abs(dm_hln), df=T - 1)
+    return {"stat": dm_hln, "p_value": p_value, "n": T, "mean_diff": dbar}

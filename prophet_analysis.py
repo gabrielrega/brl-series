@@ -109,4 +109,5 @@ def run_prophet_analysis(df):
         "mae": cv["mae"],
         "mape": cv["mape"],
         "rmse": cv["rmse"],
+        "errors": cv["errors"],
     }

@@ -120,5 +120,6 @@ def run_ets_analysis(series):
     return {
         "mae": mae,
         "mape": mape,
-        "rmse": rmse
+        "rmse": rmse,
+        "errors": cv["errors"],
     }

@@ -96,6 +96,33 @@ def test_var_helpers():
     check("_select_lag floored at >= 1", _select_lag(df_diff) >= 1)
 
 
+def test_diebold_mariano():
+    rng = np.random.default_rng(7)
+    idx = pd.MultiIndex.from_tuples(
+        [(c, c + j) for c in range(0, 600, 60) for j in range(60)],
+        names=["cutoff", "date"],
+    )
+    bench = pd.Series(rng.normal(0, 1.0, len(idx)), index=idx)
+
+    # Identical errors => no difference: stat ~ 0, p ~ 1.
+    dm_same = ev.diebold_mariano(bench, bench.copy(), horizon=60, loss="abs")
+    check("DM identical errors => |stat| tiny", abs(dm_same["stat"]) < 1e-6)
+    check("DM identical errors => p ~ 1", dm_same["p_value"] > 0.99)
+
+    # Model with uniformly smaller errors must win significantly (stat < 0).
+    model = bench * 0.25
+    dm = ev.diebold_mariano(model, bench, horizon=60, loss="abs")
+    check("DM better model => negative stat", dm["stat"] < 0)
+    check("DM better model => significant", dm["p_value"] < 0.05)
+    check("DM better model => negative mean_diff", dm["mean_diff"] < 0)
+
+    # No overlap in the index => None.
+    other = pd.Series([1.0, 2.0, 3.0], index=pd.MultiIndex.from_tuples(
+        [(9999, 0), (9999, 1), (9999, 2)], names=["cutoff", "date"]))
+    check("DM with no common index => None",
+          ev.diebold_mariano(model, other, horizon=60) is None)
+
+
 def test_garch_forecast_on_real_data():
     csv = os.path.join("data", "usd_brl_history.csv")
     if not os.path.exists(csv):
@@ -117,6 +144,7 @@ if __name__ == "__main__":
         test_level_cv_unchanged,
         test_var_forecast_shape_and_inversion,
         test_var_helpers,
+        test_diebold_mariano,
         test_garch_forecast_on_real_data,
     ):
         print(f"\n{fn.__name__}:")

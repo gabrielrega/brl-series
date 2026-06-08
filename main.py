@@ -9,7 +9,7 @@ from prophet_analysis import run_prophet_analysis
 from ets_analysis import run_ets_analysis
 from garch_analysis import run_garch_analysis
 from var_analysis import run_var_analysis
-from evaluation import rolling_origin_cv, naive_rw_forecast, HORIZON
+from evaluation import rolling_origin_cv, naive_rw_forecast, diebold_mariano, HORIZON
 
 def download_bcb_data(series_id, start_date, end_date):
     """
@@ -110,9 +110,11 @@ def main():
     else:
         print("\nSkipping VAR: SELIC series unavailable.")
 
-    # Level comparison (all scored on the same rolling-origin CV, horizon=HORIZON)
+    # Level comparison (all scored on the same rolling-origin CV, horizon=HORIZON).
+    # DM = Diebold-Mariano vs the Naive RW baseline on the absolute-error loss:
+    # a negative stat with p < 0.05 means the model significantly beats the RW.
     print(f"\n--- Level Model Comparison ({HORIZON}-day horizon CV) ---")
-    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
+    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8} {'DM vs RW':>9} {'p':>7}")
     for name, metrics in (
         ("Naive RW", naive_metrics),
         ("ARIMA", arima_metrics),
@@ -120,23 +122,40 @@ def main():
         ("Prophet", prophet_metrics),
         ("VAR", var_metrics),
     ):
-        if metrics:
-            print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} {metrics['rmse']:>8.4f}")
+        if not metrics:
+            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8} {'—':>9} {'—':>7}")
+            continue
+        if name == "Naive RW":
+            dm_cell, p_cell = f"{'—':>9}", f"{'—':>7}"
         else:
-            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8}")
+            dm = diebold_mariano(metrics["errors"], naive_metrics["errors"], loss="abs")
+            dm_cell = f"{dm['stat']:>9.3f}" if dm else f"{'—':>9}"
+            p_cell = f"{dm['p_value']:>7.3f}" if dm else f"{'—':>7}"
+        print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} "
+              f"{metrics['rmse']:>8.4f} {dm_cell} {p_cell}")
 
     # Volatility comparison (separate target: realized vol, annualized %).
+    # DM here is GARCH vs the constant-vol baseline (one forecast per fold, so
+    # horizon=1 for the autocorrelation correction).
     print(f"\n--- Volatility Model Comparison ({HORIZON}-day horizon CV) ---")
-    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
+    print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8} {'DM vs CV':>9} {'p':>7}")
+    baseline = garch_metrics.get("baseline") if garch_metrics else None
     vol_rows = []
     if garch_metrics:
-        vol_rows.append(("Const Vol", garch_metrics.get("baseline")))
+        vol_rows.append(("Const Vol", baseline))
         vol_rows.append(("GARCH", garch_metrics))
     for name, metrics in vol_rows:
-        if metrics:
-            print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} {metrics['rmse']:>8.4f}")
+        if not metrics:
+            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8} {'—':>9} {'—':>7}")
+            continue
+        if name == "GARCH" and baseline and baseline.get("errors") is not None:
+            dm = diebold_mariano(metrics["errors"], baseline["errors"], horizon=1, loss="abs")
+            dm_cell = f"{dm['stat']:>9.3f}" if dm else f"{'—':>9}"
+            p_cell = f"{dm['p_value']:>7.3f}" if dm else f"{'—':>7}"
         else:
-            print(f"{name:<12} {'—':>8} {'—':>8} {'—':>8}")
+            dm_cell, p_cell = f"{'—':>9}", f"{'—':>7}"
+        print(f"{name:<12} {metrics['mae']:>8.4f} {metrics['mape']:>8.4f} "
+              f"{metrics['rmse']:>8.4f} {dm_cell} {p_cell}")
 
 if __name__ == "__main__":
     main()

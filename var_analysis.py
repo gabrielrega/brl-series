@@ -188,4 +188,5 @@ def run_var_analysis(fx_series, selic_series):
         "mae": mae,
         "mape": mape,
         "rmse": rmse,
+        "errors": cv["errors"],
     }

@@ -192,5 +192,6 @@ def run_garch_analysis(series):
         "mae": cv["mae"],
         "mape": cv["mape"],
         "rmse": cv["rmse"],
+        "errors": cv["errors"],
         "baseline": baseline,
     }
