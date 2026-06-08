@@ -11,54 +11,51 @@ from datetime import datetime, timedelta
 import warnings
 import sys
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
+from statsmodels.tools.sm_exceptions import ValueWarning, InterpolationWarning
+
+from evaluation import rolling_origin_cv, HORIZON
+
+# Silence only the known-benign noise, not everything: the date index has no
+# explicit frequency (ValueWarning) and KPSS reports p-values at the table
+# bounds (InterpolationWarning). ConvergenceWarning is left visible on purpose
+# so a model that genuinely fails to fit still surfaces.
+warnings.simplefilter("ignore", ValueWarning)
+warnings.simplefilter("ignore", InterpolationWarning)
 
 def check_stationarity(timeseries):
     print("Results of Dickey-Fuller Test:")
     dftest = adfuller(timeseries, autolag='AIC')
     dfoutput = pd.Series(dftest[0:4], index=['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
     for key,value in dftest[4].items():
-        dfoutput[f'Critical Value ({key})'] = value
+        dfoutput['Critical Value (%s)'%key] = value
     print(dfoutput)
-
+    
     print("\nResults of KPSS Test:")
     kpsstest = kpss(timeseries, regression='c', nlags="auto")
     kpss_output = pd.Series(kpsstest[0:3], index=['Test Statistic','p-value','Lags Used'])
     for key,value in kpsstest[3].items():
-        kpss_output[f'Critical Value ({key})'] = value
+        kpss_output['Critical Value (%s)'%key] = value
     print(kpss_output)
 
-def evaluate_arima_model(train, test, order):
-    history = [x for x in train]
-    predictions = list()
-    # Walk-forward validation
-    for t in range(len(test)):
-        model = ARIMA(history, order=order)
-        model_fit = model.fit()
-        output = model_fit.forecast()
-        yhat = output[0]
-        predictions.append(yhat)
-        obs = test[t]
-        history.append(obs)
-    
-    mae = mean_absolute_error(test, predictions)
-    mape = mean_absolute_percentage_error(test, predictions)
-    rmse = np.sqrt(mean_squared_error(test, predictions))
-    
-    return predictions, mae, mape, rmse
+def arima_forecast(train, future_index, order):
+    """Multi-step forecast used by the shared cross-validation and final-window plot.
 
-def main():
-    # Load data
-    try:
-        df = pd.read_csv('usd_brl_history.csv')
-        df['data'] = pd.to_datetime(df['data'])
-        df.set_index('data', inplace=True)
-        series = df['valor']
-    except FileNotFoundError:
-        print("Error: 'usd_brl_history.csv' not found. Please run download_data.py first.")
-        sys.exit(1)
+    Fits an ARIMA(order) on `train` and forecasts len(future_index) steps ahead,
+    aligned positionally to the held-out observations.
+    """
+    model_fit = ARIMA(train, order=order).fit()
+    return model_fit.get_forecast(steps=len(future_index)).predicted_mean.values
 
+def run_arima_analysis(series):
+    """
+    Runs the complete ARIMA analysis on a time series.
+
+    Args:
+        series (pd.Series): The time series data.
+
+    Returns:
+        dict: A dictionary with the forecast accuracy metrics.
+    """
     # Phase 1: Identification
     print("--- Phase 1: Model Identification ---")
     
@@ -86,9 +83,8 @@ def main():
     plot_pacf(diff_series, ax=axes[2, 0])
     
     plt.tight_layout()
-    plt.savefig('stationarity_plots.png')
-    plt.close()
-    print("\nStationarity plots saved to 'stationarity_plots.png'")
+    plt.savefig('assets/stationarity_plots.png')
+    print("\nStationarity plots saved to 'assets/stationarity_plots.png'")
 
     # Grid Search for p, d, q (Simplified)
     # Based on differencing, d=1 seems likely. Let's check p and q.
@@ -106,7 +102,8 @@ def main():
                 if results.aic < best_aic:
                     best_aic = results.aic
                     best_order = (p, 1, q)
-            except Exception:
+            except Exception as e:
+                print(f'ARIMA({p},1,{q}) - skipped ({type(e).__name__})')
                 continue
                 
     print(f"\nBest ARIMA Order: {best_order}")
@@ -123,9 +120,8 @@ def main():
     fig, ax = plt.subplots(1, 2, figsize=(16, 6))
     residuals.plot(title="Residuals", ax=ax[0])
     residuals.plot(kind='kde', title='Density', ax=ax[1])
-    plt.savefig('residual_plots.png')
-    plt.close()
-    print("\nResidual plots saved to 'residual_plots.png'")
+    plt.savefig('assets/residual_plots.png')
+    print("\nResidual plots saved to 'assets/residual_plots.png'")
     
     # Ljung-Box Test
     lb_test = acorr_ljungbox(residuals, lags=[10], return_df=True)
@@ -136,42 +132,42 @@ def main():
     jb_score, p_value = jarque_bera(residuals)
     print(f"\nJarque-Bera Test: Score={jb_score:.2f}, p-value={p_value:.4f}")
 
-    # Phase 3: Forecasting & Evaluation
+    # Phase 3: Forecasting & Evaluation (shared rolling-origin cross-validation)
     print("\n--- Phase 3: Forecasting & Evaluation ---")
-    
-    train_size = int(len(series) - 60)
-    train, test = series[0:train_size], series[train_size:len(series)]
-    
-    print(f"Training size: {len(train)}, Test size: {len(test)}")
-    
-    predictions, mae, mape, rmse = evaluate_arima_model(train, test.values, best_order)
-    
-    print(f"\nForecast Accuracy Metrics:")
+
+    cv = rolling_origin_cv(
+        lambda tr, idx: arima_forecast(tr, idx, best_order),
+        series,
+        label="ARIMA",
+    )
+    mae, mape, rmse = cv["mae"], cv["mape"], cv["rmse"]
+
+    print(f"\nForecast Accuracy Metrics ({cv['n_folds']}-fold CV, horizon={HORIZON}):")
     print(f"MAE: {mae:.4f}")
     print(f"MAPE: {mape:.4f}")
     print(f"RMSE: {rmse:.4f}")
-    
-    # Plot Forecasts
+
+    # Plot the final held-out window (multi-step forecast vs actual)
+    test = series.iloc[-HORIZON:]
+    predictions = arima_forecast(series.iloc[:-HORIZON], test.index, best_order)
     plt.figure(figsize=(12, 6))
     plt.plot(test.index, test.values, label='Actual')
     plt.plot(test.index, predictions, color='red', label='Forecast')
-    plt.title('ARIMA Forecast vs Actual (Walk-Forward)')
+    plt.title(f'ARIMA Forecast vs Actual (last {HORIZON} days, multi-step)')
     plt.legend()
-    plt.savefig('forecast_plots.png')
-    plt.close()
-    print("\nForecast plots saved to 'forecast_plots.png'")
+    plt.savefig('assets/forecast_plots.png')
+    print("\nForecast plots saved to 'assets/forecast_plots.png'")
 
-    # Phase 4: Future Forecasting
+    # Phase 4: Future Forecasting (one year beyond the last observation)
     # Retrain on full dataset
     final_model = ARIMA(series, order=best_order)
     final_model_fit = final_model.fit()
 
-    # Calculate steps to forecast: 1 year from last data point
+    # Calculate steps to forecast
     last_date = series.index[-1]
-    target_date = last_date + pd.DateOffset(years=1)
-
-    print(f"\n--- Phase 4: Future Forecasting (Until {target_date.date()}) ---")
-
+    target_date = last_date + timedelta(days=365)
+    print(f"\n--- Phase 4: Future Forecasting (until {target_date.date()}) ---")
+    
     # Create date range for forecast
     future_dates = pd.date_range(start=last_date + timedelta(days=1), end=target_date)
     steps = len(future_dates)
@@ -193,8 +189,8 @@ def main():
     forecast_df.set_index('Date', inplace=True)
     
     # Save to CSV
-    forecast_df.to_csv('future_forecast.csv')
-    print("Future forecast saved to 'future_forecast.csv'")
+    forecast_df.to_csv('assets/future_forecast.csv')
+    print("Future forecast saved to 'assets/future_forecast.csv'")
     
     # Plot Future Forecast
     plt.figure(figsize=(12, 6))
@@ -208,13 +204,15 @@ def main():
                      forecast_df['Upper CI'], 
                      color='pink', alpha=0.3, label='95% CI')
     
-    plt.title(f'BRL/USD Forecast until {target_date.date()}')
+    plt.title(f'BRL/USD ARIMA Forecast: next {steps} days (until {target_date.date()})')
     plt.legend()
     plt.grid(True)
-    plt.savefig('future_forecast_plot.png')
-    plt.close()
-    print("Future forecast plot saved to 'future_forecast_plot.png'")
+    plt.savefig('assets/future_forecast_plot.png')
+    print("Future forecast plot saved to 'assets/future_forecast_plot.png'")
 
-if __name__ == "__main__":
-    main()
-
+    return {
+        "mae": mae,
+        "mape": mape,
+        "rmse": rmse,
+        "errors": cv["errors"],
+    }

@@ -1,0 +1,14 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore virtual environment
+.venv/
+
+# Ignore data files
+data/
+*.csv
+
+# Ignore generated assets
+assets/
+*.png
