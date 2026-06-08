@@ -3,8 +3,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from arch import arch_model
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
+from arch.utility.exceptions import DataScaleWarning, StartingValueWarning
 from datetime import timedelta
 import warnings
+
+# Silence only the benign arch diagnostics about data scale / starting values
+# (returns are already scaled by 100); ConvergenceWarning stays visible so a
+# window that fails to fit is not hidden — fit_garch falls back to Normal there.
+warnings.simplefilter("ignore", DataScaleWarning)
+warnings.simplefilter("ignore", StartingValueWarning)
 
 from evaluation import (
     log_returns,

@@ -11,10 +11,16 @@ from datetime import datetime, timedelta
 import warnings
 import sys
 
+from statsmodels.tools.sm_exceptions import ValueWarning, InterpolationWarning
+
 from evaluation import rolling_origin_cv, HORIZON
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
+# Silence only the known-benign noise, not everything: the date index has no
+# explicit frequency (ValueWarning) and KPSS reports p-values at the table
+# bounds (InterpolationWarning). ConvergenceWarning is left visible on purpose
+# so a model that genuinely fails to fit still surfaces.
+warnings.simplefilter("ignore", ValueWarning)
+warnings.simplefilter("ignore", InterpolationWarning)
 
 def check_stationarity(timeseries):
     print("Results of Dickey-Fuller Test:")
@@ -96,7 +102,8 @@ def run_arima_analysis(series):
                 if results.aic < best_aic:
                     best_aic = results.aic
                     best_order = (p, 1, q)
-            except:
+            except Exception as e:
+                print(f'ARIMA({p},1,{q}) - skipped ({type(e).__name__})')
                 continue
                 
     print(f"\nBest ARIMA Order: {best_order}")

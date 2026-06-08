@@ -3,12 +3,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.tsa.vector_ar.var_model import VAR
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.tools.sm_exceptions import ValueWarning
 from datetime import timedelta
 import warnings
 
 from evaluation import rolling_origin_cv, HORIZON
 
-warnings.filterwarnings("ignore")
+# The date index carries no explicit frequency, so statsmodels emits a
+# ValueWarning on every fit; silence just that, keeping real fit/convergence
+# warnings visible.
+warnings.simplefilter("ignore", ValueWarning)
 
 MAX_LAGS = 10  # ceiling for AIC lag selection
 

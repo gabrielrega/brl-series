@@ -24,6 +24,12 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 ### Modificado
 - VAR entra na tabela de comparação de nível usando a mesma CV
   (initial=750, period=120, horizon=60) dos demais modelos univariados.
+- Supressão de warnings passa a ser por categoria (ARIMA/VAR/GARCH) em vez de
+  `filterwarnings("ignore")` global: silencia apenas o ruído benigno (índice sem
+  frequência, KPSS nas bordas da tabela, escala/valores iniciais da `arch`) e
+  mantém `ConvergenceWarning` visível para não esconder falhas de ajuste.
+- Grid search do ARIMA deixa de usar `except` nu: captura `Exception` e registra
+  o motivo do descarte de cada ordem.
 
 ## [0.1.0] - 2026-06-01
 ### Adicionado
