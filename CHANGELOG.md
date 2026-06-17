@@ -6,6 +6,13 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- `CLAUDE.md` a nível de projeto descrevendo a arquitetura modular atual
+  (orquestração em `main.py`, CV unificada + Diebold-Mariano em `evaluation.py`,
+  GARCH avaliado em CV de volatilidade à parte, convenções de `data/`/`assets/`
+  e de silenciamento de warnings). O antigo havia sido removido no merge do PR
+  #2 por documentar a arquitetura monolítica obsoleta.
+
 ### Corrigido
 - `garch_analysis.py`: remove o `warnings.filterwarnings("ignore")` global que
   silenciava tudo — inclusive o `ConvergenceWarning` que o módulo pretende
