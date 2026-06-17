@@ -6,10 +6,8 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from scipy.stats import jarque_bera
-from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
-from datetime import datetime, timedelta
+from datetime import timedelta
 import warnings
-import sys
 
 from statsmodels.tools.sm_exceptions import ValueWarning, InterpolationWarning
 

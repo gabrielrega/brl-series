@@ -1,9 +1,7 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from prophet import Prophet
-from datetime import datetime, timedelta
-import sys
+from datetime import timedelta
 import logging
 
 from evaluation import rolling_origin_cv, HORIZON

@@ -28,7 +28,7 @@ def download_bcb_data(series_id, start_date, end_date):
     end_str = end_date.strftime('%d/%m/%Y')
 
     # Construct URL with parameters
-    url = f"http://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados?formato=json&dataInicial={start_str}&dataFinal={end_str}"
+    url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados?formato=json&dataInicial={start_str}&dataFinal={end_str}"
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'

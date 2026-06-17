@@ -21,8 +21,6 @@ from evaluation import (
     HORIZON,
 )
 
-warnings.filterwarnings("ignore")
-
 
 def fit_garch(returns):
     """Single source of truth for the GARCH configuration used everywhere.

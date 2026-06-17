@@ -1,8 +1,6 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from statsmodels.tsa.api import ExponentialSmoothing
-from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 from datetime import timedelta
 
 from evaluation import rolling_origin_cv, HORIZON

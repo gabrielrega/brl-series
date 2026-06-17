@@ -6,6 +6,19 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Corrigido
+- `garch_analysis.py`: remove o `warnings.filterwarnings("ignore")` global que
+  silenciava tudo — inclusive o `ConvergenceWarning` que o módulo pretende
+  manter visível para sinalizar janelas que falham ao ajustar (e caem no
+  fallback Normal). Os filtros benignos (`DataScaleWarning`,
+  `StartingValueWarning`) já são tratados pontualmente.
+
+### Modificado
+- `main.py`: chamada à API do BCB passa a usar `https://`.
+- Limpeza de imports mortos em `arima_analysis.py`, `ets_analysis.py` e
+  `prophet_analysis.py` (métricas do sklearn, `sys`, `datetime`, `numpy`) que
+  ficaram obsoletos após a CV migrar para `evaluation.py`.
+
 ### Adicionado
 - Teste de Diebold-Mariano (`evaluation.diebold_mariano`) com correção de
   amostra pequena de Harvey-Leybourne-Newbold e variância de longo prazo
