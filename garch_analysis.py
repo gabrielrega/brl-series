@@ -17,9 +17,16 @@ from evaluation import (
     log_returns,
     rolling_origin_vol_cv,
     constant_vol_forecast,
+    diebold_mariano,
     TRADING_DAYS,
     HORIZON,
 )
+
+# Horizons (business days) for the cross-horizon volatility skill check: ~1 week,
+# ~1 month and the canonical ~3 months. Volatility clustering is strongest at
+# short horizons, so GARCH is expected to beat the constant-vol baseline more
+# there than at 60 days.
+VOL_HORIZONS = (5, 21, 60)
 
 
 def fit_garch(returns):
@@ -153,6 +160,31 @@ def run_garch_analysis(series):
     print(f"{'Model':<12} {'MAE':>8} {'MAPE':>8} {'RMSE':>8}")
     for name, m in (("Const Vol", baseline), ("GARCH", cv)):
         print(f"{name:<12} {m['mae']:>8.4f} {m['mape']:>8.4f} {m['rmse']:>8.4f}")
+
+    # Phase 4b: Skill across horizons. Each horizon tiles its own test windows
+    # (period == horizon), so short horizons yield many more, contiguous folds —
+    # the extra folds give the Diebold-Mariano test the power that the ~8-fold
+    # 60-day CV lacks. The question: does volatility clustering let GARCH beat the
+    # constant-vol baseline more at short horizons (5/21 days) than at 60?
+    print("\n--- Phase 4b: GARCH vs Constant-Vol Across Horizons ---")
+    print(f"{'Horizon':<8} {'Folds':>6} {'GARCH MAE':>10} {'CV MAE':>8} "
+          f"{'DM vs CV':>9} {'p':>7}")
+    for h in VOL_HORIZONS:
+        g = rolling_origin_vol_cv(garch_forecast, returns, period=h, horizon=h,
+                                  label=f"GARCH h={h}")
+        b = rolling_origin_vol_cv(constant_vol_forecast, returns, period=h, horizon=h,
+                                  label=f"Const Vol h={h}")
+        if not g or not b:
+            print(f"{h:<8} {'—':>6} {'—':>10} {'—':>8} {'—':>9} {'—':>7}")
+            continue
+        # Folds tile non-overlapping windows here, so the loss differential has no
+        # multi-step overlap: horizon=1 for the autocorrelation correction.
+        dm = diebold_mariano(g["errors"], b["errors"], horizon=1, loss="abs")
+        dm_cell = f"{dm['stat']:>9.3f}" if dm else f"{'—':>9}"
+        p_cell = f"{dm['p_value']:>7.3f}" if dm else f"{'—':>7}"
+        print(f"{str(h)+'d':<8} {g['n_folds']:>6} {g['mae']:>10.4f} "
+              f"{b['mae']:>8.4f} {dm_cell} {p_cell}")
+    print("Negative DM = GARCH beats constant vol; significant needs p < 0.05.")
 
     # Phase 5: Forward volatility forecast (one trading year ahead)
     print("\n--- Phase 5: Volatility Forecast (1 Year Ahead) ---")
