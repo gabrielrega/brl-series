@@ -91,7 +91,7 @@ def test_var_helpers():
     selic = pd.Series(12 + np.cumsum(np.random.default_rng(4).normal(0, 0.01, len(fx))),
                       index=fx.index)
     df_diff = _build_diff(fx, selic)
-    check("_build_diff has both columns", list(df_diff.columns) == ["usd_brl_diff", "selic_diff"])
+    check("_build_diff has both columns", list(df_diff.columns) == ["usd_brl_diff", "rate_diff"])
     check("_build_diff has no NaN", not df_diff.isna().any().any())
     check("_select_lag floored at >= 1", _select_lag(df_diff) >= 1)
 
@@ -123,6 +123,24 @@ def test_diebold_mariano():
           ev.diebold_mariano(model, other, horizon=60) is None)
 
 
+def test_parse_fred_csv():
+    from main import parse_fred_csv
+
+    # Current FRED header is 'observation_date'; a '.' marks a missing day.
+    text = "observation_date,DFF\n2024-01-02,5.33\n2024-01-03,.\n2024-01-04,5.31\n"
+    df = parse_fred_csv(text)
+    check("parse_fred_csv renames to data/valor", list(df.columns) == ["data", "valor"])
+    check("parse_fred_csv drops '.' missing rows", len(df) == 2)
+    check("parse_fred_csv parses dates", str(df["data"].dtype).startswith("datetime"))
+    check("parse_fred_csv parses values", abs(df["valor"].iloc[0] - 5.33) < 1e-9)
+
+    # Older exports use 'DATE' as the header — must still work (parser is
+    # position-based, not name-based).
+    legacy = "DATE,DFF\n2024-01-02,5.33\n"
+    check("parse_fred_csv handles legacy DATE header",
+          list(parse_fred_csv(legacy).columns) == ["data", "valor"])
+
+
 def test_garch_forecast_on_real_data():
     csv = os.path.join("data", "usd_brl_history.csv")
     if not os.path.exists(csv):
@@ -145,6 +163,7 @@ if __name__ == "__main__":
         test_var_forecast_shape_and_inversion,
         test_var_helpers,
         test_diebold_mariano,
+        test_parse_fred_csv,
         test_garch_forecast_on_real_data,
     ):
         print(f"\n{fn.__name__}:")
