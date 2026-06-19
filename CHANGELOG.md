@@ -7,6 +7,23 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não lançado]
 
 ### Adicionado
+- VAR passa a usar o **diferencial de juros Brasil–EUA** (`SELIC - Fed Funds`)
+  como variável de taxa, em vez da SELIC pura — a UIP é sobre o *diferencial*.
+  `main.py` baixa a Fed Funds do FRED (`download_fred_data`, série `DFF`, sem API
+  key; `parse_fred_csv` isolado e testável) e alinha a taxa diária ao índice de
+  dias úteis com forward-fill. Se o FRED estiver indisponível, o VAR cai de volta
+  à SELIC pura. `run_var_analysis` ganha o parâmetro `rate_label`.
+- **GARCH avaliado em múltiplos horizontes** (Fase 4b, `VOL_HORIZONS = (5, 21,
+  60)`): cada horizonte ladrilha as próprias janelas de teste (`period == horizon`),
+  rendendo muito mais folds nos prazos curtos e poder ao teste DM. **Achado:** em
+  5 dias (100 folds) o GARCH bate a volatilidade constante de forma significativa
+  (DM −3.47, p 0.001); o ganho some em 21 dias (p 0.28) e 60 dias (p 0.62) —
+  clustering paga no curto prazo, consistente com Meese-Rogoff (que é sobre o
+  nível, não a volatilidade).
+- Testes offline (`test_models.py`): `parse_fred_csv` (cabeçalho atual e legado,
+  tratamento de `.`) e mais folds em horizonte curto na CV de volatilidade.
+
+### Adicionado
 - `CLAUDE.md` a nível de projeto descrevendo a arquitetura modular atual
   (orquestração em `main.py`, CV unificada + Diebold-Mariano em `evaluation.py`,
   GARCH avaliado em CV de volatilidade à parte, convenções de `data/`/`assets/`
