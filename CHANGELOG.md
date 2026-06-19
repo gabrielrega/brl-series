@@ -6,6 +6,8 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.2.0] - 2026-06-19
+
 ### Adicionado
 - VAR passa a usar o **diferencial de juros Brasil–EUA** (`SELIC - Fed Funds`)
   como variável de taxa, em vez da SELIC pura — a UIP é sobre o *diferencial*.
