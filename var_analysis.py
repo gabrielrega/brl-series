@@ -23,16 +23,17 @@ def adf_test(series, name):
     print(f"  ADF Test — {name}: stat={result[0]:.4f}, p-value={result[1]:.4f}{verdict}")
 
 
-def _build_diff(fx_level, selic_level):
-    """Stationary inputs for the VAR: FX log-returns and SELIC first-difference.
+def _build_diff(fx_level, rate_level):
+    """Stationary inputs for the VAR: FX log-returns and the rate first-difference.
 
     FX is close to a random walk in levels, so we model log-differences (returns);
-    the policy rate is differenced once (change in rate). Returned aligned and
-    NaN-free, ready to feed VAR().
+    the rate variable (the Brazil-US interest differential, or the SELIC level when
+    Fed Funds is unavailable) is differenced once. Returned aligned and NaN-free,
+    ready to feed VAR().
     """
     df = pd.DataFrame({
         'usd_brl_diff': np.log(fx_level).diff(),
-        'selic_diff': selic_level.diff(),
+        'rate_diff': rate_level.diff(),
     })
     return df.dropna()
 
@@ -43,17 +44,19 @@ def _select_lag(df_diff):
     return max(int(order), 1)
 
 
-def var_forecast(train, future_index, selic_series):
-    """Multi-step USD/BRL level forecast from a bivariate VAR(FX, SELIC).
+def var_forecast(train, future_index, rate_series):
+    """Multi-step USD/BRL level forecast from a bivariate VAR(FX, rate).
 
-    Refits the VAR on every training window (closing over the aligned SELIC series),
-    forecasts the differenced series `len(future_index)` steps ahead and inverts the
+    The rate variable is the Brazil-US interest differential (SELIC - Fed Funds),
+    or the SELIC level alone when Fed Funds is unavailable. Refits the VAR on every
+    training window (closing over the aligned rate series), forecasts the
+    differenced series `len(future_index)` steps ahead and inverts the
     log-differences back to a price level anchored at the last training observation.
     Signature matches `rolling_origin_cv` so VAR is scored on the same level
     cutoffs/horizon as the univariate models.
     """
-    selic_train = selic_series.loc[train.index]
-    df_diff = _build_diff(train, selic_train)
+    rate_train = rate_series.loc[train.index]
+    df_diff = _build_diff(train, rate_train)
 
     lag = _select_lag(df_diff)
     var_fit = VAR(df_diff).fit(lag)
@@ -64,21 +67,25 @@ def var_forecast(train, future_index, selic_series):
     return train.iloc[-1] * np.exp(np.cumsum(fx_diff_fc))
 
 
-def run_var_analysis(fx_series, selic_series):
+def run_var_analysis(fx_series, rate_series, rate_label="interest differential (SELIC - Fed Funds)"):
     """
-    Runs the complete VAR analysis on USD/BRL jointly with the SELIC policy rate.
+    Runs the complete VAR analysis on USD/BRL jointly with an interest-rate variable.
 
     Args:
         fx_series (pd.Series): USD/BRL price level, datetime-indexed.
-        selic_series (pd.Series): SELIC rate (% p.a.), datetime-indexed, already
-            aligned to `fx_series` (same index).
+        rate_series (pd.Series): the rate variable (% p.a.) — the Brazil-US interest
+            differential (SELIC - Fed Funds), or the SELIC level when Fed Funds is
+            unavailable — datetime-indexed, already aligned to `fx_series`.
+        rate_label (str): human-readable name of the rate variable, used in logs and
+            plot titles.
 
     Returns:
         dict: level forecast accuracy metrics, comparable to the univariate models.
     """
-    print("--- VAR Analysis: USD/BRL + SELIC Interest Rate ---")
-    print("Economic basis: Uncovered Interest Rate Parity (UIP).")
-    print("Granger test: does the SELIC rate help predict BRL movements?\n")
+    print(f"--- VAR Analysis: USD/BRL + {rate_label} ---")
+    print("Economic basis: Uncovered Interest Rate Parity (UIP) — UIP is about the")
+    print("Brazil-US rate *differential*, not the domestic policy rate alone.")
+    print(f"Granger test: does the {rate_label} help predict BRL movements?\n")
 
     # Phase 1: Stationarity
     print("--- Phase 1: Stationarity ---")
@@ -87,22 +94,22 @@ def run_var_analysis(fx_series, selic_series):
 
     print("\nADF tests on levels:")
     adf_test(fx_series, 'USD/BRL (level)')
-    adf_test(selic_series, 'SELIC (level)')
+    adf_test(rate_series, f'{rate_label} (level)')
 
-    df_diff = _build_diff(fx_series, selic_series)
+    df_diff = _build_diff(fx_series, rate_series)
     print("\nADF tests on differenced series:")
     adf_test(df_diff['usd_brl_diff'], 'USD/BRL log-diff')
-    adf_test(df_diff['selic_diff'], 'SELIC first-diff')
+    adf_test(df_diff['rate_diff'], f'{rate_label} first-diff')
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
     axes[0, 0].plot(fx_series.index, fx_series.values)
     axes[0, 0].set_title('USD/BRL Exchange Rate (Level)')
-    axes[0, 1].plot(selic_series.index, selic_series.values)
-    axes[0, 1].set_title('SELIC Rate — % p.a. (Level)')
+    axes[0, 1].plot(rate_series.index, rate_series.values)
+    axes[0, 1].set_title(f'{rate_label} — % p.a. (Level)')
     axes[1, 0].plot(df_diff.index, df_diff['usd_brl_diff'])
     axes[1, 0].set_title('USD/BRL Log-Difference (Returns)')
-    axes[1, 1].plot(df_diff.index, df_diff['selic_diff'])
-    axes[1, 1].set_title('SELIC First-Difference')
+    axes[1, 1].plot(df_diff.index, df_diff['rate_diff'])
+    axes[1, 1].set_title(f'{rate_label} First-Difference')
     plt.tight_layout()
     plt.savefig('assets/var_input_series.png')
     plt.close()
@@ -116,13 +123,13 @@ def run_var_analysis(fx_series, selic_series):
     var_fit = VAR(df_diff).fit(optimal_lag)
     print(var_fit.summary())
 
-    print("\nGranger Causality Test: SELIC -> USD/BRL")
-    gc = var_fit.test_causality('usd_brl_diff', ['selic_diff'], kind='f')
+    print(f"\nGranger Causality Test: {rate_label} -> USD/BRL")
+    gc = var_fit.test_causality('usd_brl_diff', ['rate_diff'], kind='f')
     print(gc.summary())
     if gc.pvalue < 0.05:
-        print("  -> SELIC Granger-causes USD/BRL (p < 0.05): past rates improve FX forecasts.")
+        print(f"  -> {rate_label} Granger-causes USD/BRL (p < 0.05): past rates improve FX forecasts.")
     else:
-        print("  -> No significant Granger causality (p >= 0.05): SELIC does not reliably predict BRL.")
+        print(f"  -> No significant Granger causality (p >= 0.05): {rate_label} does not reliably predict BRL.")
 
     # Phase 3: Impulse response functions
     print("\n--- Phase 3: Impulse Response Functions ---")
@@ -137,7 +144,7 @@ def run_var_analysis(fx_series, selic_series):
     # Phase 4: Forecast evaluation (shared rolling-origin CV, level target)
     print("\n--- Phase 4: Forecast Evaluation ---")
     cv = rolling_origin_cv(
-        lambda tr, idx: var_forecast(tr, idx, selic_series),
+        lambda tr, idx: var_forecast(tr, idx, rate_series),
         fx_series,
         label="VAR",
     )
@@ -149,7 +156,7 @@ def run_var_analysis(fx_series, selic_series):
 
     # Final held-out window (multi-step level forecast vs actual)
     test = fx_series.iloc[-HORIZON:]
-    predictions = var_forecast(fx_series.iloc[:-HORIZON], test.index, selic_series)
+    predictions = var_forecast(fx_series.iloc[:-HORIZON], test.index, rate_series)
     plt.figure(figsize=(12, 6))
     plt.plot(test.index, test.values, label='Actual')
     plt.plot(test.index, predictions, color='red', label='Forecast')
@@ -163,13 +170,13 @@ def run_var_analysis(fx_series, selic_series):
     print("\n--- Phase 5: Future Forecasting (1 Year Ahead) ---")
     horizon = 252
     fc = var_fit.forecast(df_diff.values[-optimal_lag:], steps=horizon)
-    fc_df = pd.DataFrame(fc, columns=['usd_brl_diff_fc', 'selic_diff_fc'])
+    fc_df = pd.DataFrame(fc, columns=['usd_brl_diff_fc', 'rate_diff_fc'])
 
     last_date = df_diff.index[-1]
     fc_df.index = pd.date_range(start=last_date + timedelta(days=1), periods=horizon, freq='B')
     fc_df['usd_brl_forecast'] = fx_series.iloc[-1] * np.exp(fc_df['usd_brl_diff_fc'].cumsum())
-    fc_df['selic_rate_forecast'] = selic_series.iloc[-1] + fc_df['selic_diff_fc'].cumsum()
-    fc_df[['usd_brl_forecast', 'selic_rate_forecast']].to_csv('assets/var_future_forecast.csv')
+    fc_df['rate_forecast'] = rate_series.iloc[-1] + fc_df['rate_diff_fc'].cumsum()
+    fc_df[['usd_brl_forecast', 'rate_forecast']].to_csv('assets/var_future_forecast.csv')
     print("Future forecast saved to 'assets/var_future_forecast.csv'")
 
     history = fx_series[fx_series.index >= last_date - timedelta(days=180)]

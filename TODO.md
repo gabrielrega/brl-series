@@ -26,9 +26,29 @@ Próximos passos a partir dos resultados do `main.py` com a SELIC real
       contíguas. A vantagem do VAR sobre o RW **não** persistiu.
 - [x] **Testar significância da diferença** (Diebold-Mariano com correção HLN,
       `evaluation.diebold_mariano`): coluna `DM vs RW`/`DM vs CV` no `main.py`.
-- [ ] **Diferencial de juros Brasil–EUA explícito** no VAR, em vez da SELIC pura
-      (UIP é sobre o *diferencial*): baixar a Fed Funds / Treasury e usar `selic - i_us`.
-- [ ] **Horizontes alternativos para o GARCH**: avaliar vol em horizontes curtos
-      (5/21 dias) onde o clustering tende a ajudar mais que a 60 dias.
-- [ ] **Decidir na revisão do PR #2** como casar a linha modular com o `master`
-      antigo (versões standalone de GARCH/VAR via CSV) — ver histórico divergente.
+- [x] **Diferencial de juros Brasil–EUA explícito** no VAR, em vez da SELIC pura.
+      `main.py` baixa a Fed Funds (FRED `DFF`, taxa de política overnight dos EUA,
+      par natural da SELIC) e o VAR passa a usar `selic - fed_funds` como variável
+      de juros; cai de volta à SELIC pura se o FRED estiver indisponível. O número
+      out-of-sample só sai ao rodar `main.py` com rede (FRED).
+- [x] **Horizontes alternativos para o GARCH** (Fase 4b, `VOL_HORIZONS = (5, 21,
+      60)`, janelas contíguas → mais folds nos curtos). **Achado:** o clustering
+      *paga* no curto prazo — em 5 dias (100 folds) o GARCH **bate** a vol constante
+      de forma significativa (MAE 3.74 vs 4.42, DM −3.47, **p = 0.001**); em 21 dias
+      vira ruído (DM −1.11, p 0.28) e em 60 some (DM −0.53, p 0.62). É o primeiro
+      modelo do projeto a vencer seu baseline com significância — e **não** fere
+      Meese-Rogoff, que é sobre o *nível*, não sobre a volatilidade.
+
+## Concluído fora desta lista
+
+- **Casar a linha modular com o `master` antigo:** resolvido — o PR #2 já foi
+  mergeado (`ba2e33d`); a linha standalone com CSVs na raiz foi aposentada e a
+  modular é a única. Item removido por estar obsoleto.
+
+## A fazer (novos)
+
+- [ ] **Diferencial com Treasury de prazo casado**: a SELIC é overnight, mas a
+      expectativa cambial olha prazos maiores — testar `selic - DGS1`/`DGS2`
+      (Treasury 1–2 anos) além do Fed Funds e ver se o Granger/IRF muda.
+- [ ] **Confirmar o ganho do GARCH a 5 dias com a Fed Funds no VAR à parte**: o
+      resultado de 5 dias é da volatilidade (univariado); não toca o nível.

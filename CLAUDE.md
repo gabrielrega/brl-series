@@ -45,9 +45,11 @@ ets_analysis.py    ETS, damped additive trend, NO seasonal (it was inert on this
                    series — see fit_ets docstring).
 prophet_analysis.py  Prophet, weekly+yearly seasonality, BR holidays.
 garch_analysis.py  GARCH(1,1) Student-t (Normal fallback) — targets VOLATILITY,
-                   not the level, so it is scored on its own CV.
-var_analysis.py    Bivariate VAR(USD/BRL, SELIC), differenced; UIP angle +
-                   Granger causality + IRF.
+                   not the level, so it is scored on its own CV. Phase 4b sweeps
+                   horizons (VOL_HORIZONS = 5/21/60 d) to test where clustering pays.
+var_analysis.py    Bivariate VAR(USD/BRL, interest differential), differenced; the
+                   rate variable is SELIC - Fed Funds (UIP is about the
+                   *differential*), with SELIC-only fallback; Granger + IRF.
 ```
 
 ### Why the shared CV matters (the central design idea)
@@ -70,7 +72,9 @@ compared to a constant-vol baseline — never mixed into the level table.
 ## Data flow & conventions
 
 - Inputs: BCB SGS series **1** (USD/BRL) and **432** (SELIC), 5y window, via
-  `download_bcb_data()` in `main.py` (uses `https://`).
+  `download_bcb_data()` in `main.py` (uses `https://`); plus the US Fed Funds rate
+  (FRED **DFF**) via `download_fred_data()` (no API key) to form the Brazil-US
+  interest differential for the VAR. The VAR degrades to SELIC-only if FRED fails.
 - `data/` holds downloaded CSVs; `assets/` holds generated plots/CSVs. **Both
   are git-ignored** (along with `*.csv`/`*.png`). Don't commit data or outputs.
 - Warning hygiene: each model silences only its known-benign warnings by
@@ -84,9 +88,16 @@ compared to a constant-vol baseline — never mixed into the level table.
 With 8 folds + DM, no level model significantly beats the random walk (VAR's
 edge is noise: DM −0.166, p 0.868). SELIC Granger-causes USD/BRL in-sample
 (p 0.008) but that doesn't convert to detectable out-of-sample gains (weak UIP).
-GARCH lands numerically below constant-vol but not significantly (p 0.615). With
-only ~8 folds the DM test has low power: "not significant" means "no evidence",
-not "equal". When reporting results, preserve that distinction.
+At the 60-day horizon GARCH lands numerically below constant-vol but not
+significantly (p 0.615). With only ~8 folds the DM test has low power: "not
+significant" means "no evidence", not "equal". When reporting results, preserve
+that distinction.
+
+The one place a model *does* significantly beat its baseline is **volatility at
+short horizons**: at 5 business days (100 folds) GARCH beats constant-vol with
+DM −3.47, p 0.001 (Phase 4b). The gap fades to noise by 21 d (p 0.28) and 60 d
+(p 0.62). This is about *volatility*, not the level, so it does not contradict
+Meese-Rogoff — the exchange-rate level is still a random walk.
 
 ## Versioning
 

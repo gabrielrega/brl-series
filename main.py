@@ -55,6 +55,61 @@ def download_bcb_data(series_id, start_date, end_date):
             print(f"Response text snippet: {response.text[:200]}")
         return None
 
+
+def parse_fred_csv(text):
+    """Parse a FRED `fredgraph.csv` payload into a ['data', 'valor'] DataFrame.
+
+    Kept separate from the HTTP call so the parsing (the part prone to silent
+    breakage) is unit-testable offline. FRED's first column is a date (header
+    'observation_date' on current exports, 'DATE' on older ones) and the second is
+    the series itself; missing observations are encoded as '.', which become NaN
+    and are dropped.
+    """
+    df = pd.read_csv(io.StringIO(text))
+    date_col, val_col = df.columns[0], df.columns[1]
+    df = df.rename(columns={date_col: 'data', val_col: 'valor'})
+    df['data'] = pd.to_datetime(df['data'])
+    df['valor'] = pd.to_numeric(df['valor'], errors='coerce')
+    return df.dropna(subset=['valor'])[['data', 'valor']]
+
+
+def download_fred_data(series_id, start_date, end_date):
+    """
+    Downloads a daily series from FRED as CSV (no API key required).
+
+    Used for the US policy rate (Fed Funds) so the VAR can use the Brazil-US
+    interest *differential* (SELIC - Fed Funds), which is what Uncovered Interest
+    Rate Parity is actually about, rather than the SELIC level alone.
+
+    Args:
+        series_id (str): FRED series id (e.g. 'DFF' for the Federal Funds rate).
+        start_date (datetime), end_date (datetime): inclusive date window.
+
+    Returns:
+        pd.DataFrame with columns ['data', 'valor'] (datetime, float), or None.
+    """
+    url = (f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+           f"&cosd={start_date:%Y-%m-%d}&coed={end_date:%Y-%m-%d}")
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
+    print(f"Requesting URL: {url}")
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        return parse_fred_csv(response.text)
+
+    except Exception as e:
+        print(f"Error downloading FRED data: {e}")
+        if 'response' in locals():
+            print(f"Response status: {response.status_code}")
+            print(f"Response text snippet: {response.text[:200]}")
+        return None
+
+
 def main():
     """
     Main function to run the time series analysis.
@@ -68,10 +123,13 @@ def main():
     end_date = datetime.now()
     start_date = end_date - timedelta(days=5*365)
 
-    # Series 1 is the exchange rate (USD/BRL); series 432 is the SELIC target rate
-    # (needed for the bivariate VAR via Uncovered Interest Rate Parity).
+    # Series 1 is the exchange rate (USD/BRL); series 432 is the SELIC target rate.
+    # The Fed Funds rate (FRED 'DFF', the US overnight policy rate, the natural
+    # counterpart of the SELIC) lets the VAR use the Brazil-US interest
+    # *differential* — which is what Uncovered Interest Rate Parity is about.
     df = download_bcb_data(1, start_date, end_date)
     df_selic = download_bcb_data(432, start_date, end_date)
+    df_fedfunds = download_fred_data('DFF', start_date, end_date)
 
     if df is None:
         print("Failed to download exchange-rate data.")
@@ -83,6 +141,9 @@ def main():
     if df_selic is not None:
         df_selic.to_csv("data/selic_history.csv", index=False)
         print("SELIC data saved to data/selic_history.csv")
+    if df_fedfunds is not None:
+        df_fedfunds.to_csv("data/fedfunds_history.csv", index=False)
+        print("Fed Funds data saved to data/fedfunds_history.csv")
 
     # Load data for analysis
     df_prophet = df.rename(columns={'data': 'ds', 'valor': 'y'})
@@ -101,12 +162,32 @@ def main():
     # GARCH targets volatility, not the level: it is scored separately below.
     garch_metrics = run_garch_analysis(df_series)
 
-    # VAR needs the SELIC series aligned to the exchange rate (inner merge on date).
+    # VAR needs a policy-rate series aligned to the exchange rate (inner merge on
+    # date). When the Fed Funds rate is available, the VAR's rate variable is the
+    # Brazil-US interest differential (SELIC - Fed Funds), the UIP-consistent
+    # quantity; otherwise it falls back to the SELIC level alone.
     var_metrics = None
     if df_selic is not None:
         merged = pd.merge(df, df_selic, on='data', how='inner', suffixes=('_fx', '_selic'))
         merged = merged.rename(columns={'valor_fx': 'usd_brl', 'valor_selic': 'selic'}).set_index('data').sort_index()
-        var_metrics = run_var_analysis(merged['usd_brl'], merged['selic'])
+
+        if df_fedfunds is not None:
+            # Align the daily Fed Funds rate onto the FX business-day index,
+            # forward-filling across US-holiday gaps (a policy rate is flat
+            # between moves), then take the differential.
+            fed = df_fedfunds.set_index('data')['valor'].sort_index()
+            merged['fed_funds'] = fed.reindex(merged.index, method='ffill')
+            merged = merged.dropna(subset=['fed_funds'])
+            merged['rate_diff'] = merged['selic'] - merged['fed_funds']
+            var_metrics = run_var_analysis(
+                merged['usd_brl'], merged['rate_diff'],
+                rate_label="interest differential (SELIC - Fed Funds)",
+            )
+        else:
+            print("\nFed Funds unavailable; VAR falls back to the SELIC level.")
+            var_metrics = run_var_analysis(
+                merged['usd_brl'], merged['selic'], rate_label="SELIC",
+            )
     else:
         print("\nSkipping VAR: SELIC series unavailable.")
 
