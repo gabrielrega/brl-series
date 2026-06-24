@@ -73,10 +73,18 @@ compared to a constant-vol baseline — never mixed into the level table.
 
 - Inputs: BCB SGS series **1** (USD/BRL) and **432** (SELIC), 5y window, via
   `download_bcb_data()` in `main.py` (uses `https://`); plus the US Fed Funds rate
-  (FRED **DFF**) via `download_fred_data()` (no API key) to form the Brazil-US
-  interest differential for the VAR. The VAR degrades to SELIC-only if FRED fails.
+  (FRED **DFF**) via `download_fred_data()` to form the Brazil-US interest
+  differential for the VAR. The VAR degrades to SELIC-only if FRED is unavailable.
+- **FRED needs a free API key.** `download_fred_data()` calls the official JSON
+  API (`api.stlouisfed.org/fred/series/observations`) and reads the key from
+  `FRED_API_KEY` (environment, or a git-ignored `.env` loaded by `load_dotenv()`
+  — see `.env.example`). The old no-key `fredgraph.csv` endpoint was dropped: it
+  began stalling on read indefinitely. No key ⇒ Fed Funds is skipped and the VAR
+  falls back to SELIC-only. Never log the URL/exception verbatim — they carry the
+  key; `download_fred_data` redacts it.
 - `data/` holds downloaded CSVs; `assets/` holds generated plots/CSVs. **Both
   are git-ignored** (along with `*.csv`/`*.png`). Don't commit data or outputs.
+  `.env` is git-ignored too (secrets).
 - Warning hygiene: each model silences only its known-benign warnings by
   category (e.g. `ValueWarning`, `DataScaleWarning`) and deliberately keeps
   `ConvergenceWarning` visible so a window that fails to fit isn't hidden. Do

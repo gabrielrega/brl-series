@@ -12,3 +12,6 @@ data/
 # Ignore generated assets
 assets/
 *.png
+
+# Ignore secrets (FRED API key etc.)
+.env

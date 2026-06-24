@@ -123,22 +123,24 @@ def test_diebold_mariano():
           ev.diebold_mariano(model, other, horizon=60) is None)
 
 
-def test_parse_fred_csv():
-    from main import parse_fred_csv
+def test_parse_fred_json():
+    from main import parse_fred_json
 
-    # Current FRED header is 'observation_date'; a '.' marks a missing day.
-    text = "observation_date,DFF\n2024-01-02,5.33\n2024-01-03,.\n2024-01-04,5.31\n"
-    df = parse_fred_csv(text)
-    check("parse_fred_csv renames to data/valor", list(df.columns) == ["data", "valor"])
-    check("parse_fred_csv drops '.' missing rows", len(df) == 2)
-    check("parse_fred_csv parses dates", str(df["data"].dtype).startswith("datetime"))
-    check("parse_fred_csv parses values", abs(df["valor"].iloc[0] - 5.33) < 1e-9)
+    # The FRED API returns observations with 'date'/'value'; '.' marks a missing day.
+    text = ('{"observations": ['
+            '{"date": "2024-01-02", "value": "5.33"},'
+            '{"date": "2024-01-03", "value": "."},'
+            '{"date": "2024-01-04", "value": "5.31"}]}')
+    df = parse_fred_json(text)
+    check("parse_fred_json renames to data/valor", list(df.columns) == ["data", "valor"])
+    check("parse_fred_json drops '.' missing rows", len(df) == 2)
+    check("parse_fred_json parses dates", str(df["data"].dtype).startswith("datetime"))
+    check("parse_fred_json parses values", abs(df["valor"].iloc[0] - 5.33) < 1e-9)
 
-    # Older exports use 'DATE' as the header — must still work (parser is
-    # position-based, not name-based).
-    legacy = "DATE,DFF\n2024-01-02,5.33\n"
-    check("parse_fred_csv handles legacy DATE header",
-          list(parse_fred_csv(legacy).columns) == ["data", "valor"])
+    # An empty observation set must yield an empty data/valor frame, not crash.
+    empty = parse_fred_json('{"observations": []}')
+    check("parse_fred_json handles empty observations",
+          list(empty.columns) == ["data", "valor"] and len(empty) == 0)
 
 
 def test_vol_cv_more_folds_at_short_horizon():
@@ -177,7 +179,7 @@ if __name__ == "__main__":
         test_var_forecast_shape_and_inversion,
         test_var_helpers,
         test_diebold_mariano,
-        test_parse_fred_csv,
+        test_parse_fred_json,
         test_vol_cv_more_folds_at_short_horizon,
         test_garch_forecast_on_real_data,
     ):

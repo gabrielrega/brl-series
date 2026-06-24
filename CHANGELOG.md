@@ -6,6 +6,22 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Modificado
+- **Fonte da Fed Funds migrada para a API oficial do FRED** (JSON,
+  `api.stlouisfed.org/fred/series/observations`) em `download_fred_data`. O
+  endpoint antigo sem key (`fredgraph.csv`) passou a travar indefinidamente na
+  leitura — até no HEAD — degradando o VAR silenciosamente para SELIC pura. A API
+  oficial responde normalmente, mas exige uma **chave gratuita** lida de
+  `FRED_API_KEY` (ambiente ou `.env` git-ignored, carregado por `load_dotenv`,
+  sem dependência nova). Sem chave, a Fed Funds é pulada e o VAR cai para SELIC
+  pura, como antes. A chave nunca é logada (URL/mensagem de erro são redatadas).
+- `parse_fred_csv` → `parse_fred_json` (parser do payload de observações da API);
+  teste offline correspondente atualizado, incluindo o caso de lista vazia.
+
+### Adicionado
+- `.env.example` documentando `FRED_API_KEY` e como gerar a chave gratuita; `.env`
+  adicionado ao `.gitignore`.
+
 ## [0.2.0] - 2026-06-19
 
 ### Adicionado

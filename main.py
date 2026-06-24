@@ -1,8 +1,8 @@
 import os
+import json
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-import io
 
 from arima_analysis import run_arima_analysis
 from prophet_analysis import run_prophet_analysis
@@ -56,54 +56,86 @@ def download_bcb_data(series_id, start_date, end_date):
         return None
 
 
-def parse_fred_csv(text):
-    """Parse a FRED `fredgraph.csv` payload into a ['data', 'valor'] DataFrame.
+def load_dotenv(path=".env"):
+    """Load KEY=VALUE lines from a local `.env` into the environment (no dep).
+
+    Keeps the FRED API key out of the repo: `.env` is git-ignored. A real
+    environment variable always wins over the file (we use `setdefault`).
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+
+def parse_fred_json(text):
+    """Parse a FRED API `series/observations` JSON payload into ['data','valor'].
 
     Kept separate from the HTTP call so the parsing (the part prone to silent
-    breakage) is unit-testable offline. FRED's first column is a date (header
-    'observation_date' on current exports, 'DATE' on older ones) and the second is
-    the series itself; missing observations are encoded as '.', which become NaN
-    and are dropped.
+    breakage) is unit-testable offline. The API returns
+    `{"observations": [{"date": ..., "value": ...}, ...]}`; missing observations
+    are encoded as '.', which become NaN and are dropped.
     """
-    df = pd.read_csv(io.StringIO(text))
-    date_col, val_col = df.columns[0], df.columns[1]
-    df = df.rename(columns={date_col: 'data', val_col: 'valor'})
+    obs = json.loads(text).get("observations", [])
+    df = pd.DataFrame(obs)
+    if df.empty:
+        return pd.DataFrame(columns=['data', 'valor'])
+    df = df.rename(columns={'date': 'data', 'value': 'valor'})
     df['data'] = pd.to_datetime(df['data'])
     df['valor'] = pd.to_numeric(df['valor'], errors='coerce')
     return df.dropna(subset=['valor'])[['data', 'valor']]
 
 
-def download_fred_data(series_id, start_date, end_date):
+def download_fred_data(series_id, start_date, end_date, api_key=None):
     """
-    Downloads a daily series from FRED as CSV (no API key required).
+    Downloads a daily series from the official FRED API (JSON).
 
     Used for the US policy rate (Fed Funds) so the VAR can use the Brazil-US
     interest *differential* (SELIC - Fed Funds), which is what Uncovered Interest
     Rate Parity is actually about, rather than the SELIC level alone.
 
+    Requires a free FRED API key (https://fredaccount.stlouisfed.org/apikeys),
+    read from the `FRED_API_KEY` environment variable (or a local `.env`). The
+    older no-key `fredgraph.csv` endpoint was dropped: it began stalling on read
+    indefinitely (even HEAD), silently degrading the VAR to SELIC-only.
+
     Args:
         series_id (str): FRED series id (e.g. 'DFF' for the Federal Funds rate).
         start_date (datetime), end_date (datetime): inclusive date window.
+        api_key (str): overrides `FRED_API_KEY` (mainly for testing).
 
     Returns:
         pd.DataFrame with columns ['data', 'valor'] (datetime, float), or None.
     """
-    url = (f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-           f"&cosd={start_date:%Y-%m-%d}&coed={end_date:%Y-%m-%d}")
+    api_key = api_key or os.environ.get('FRED_API_KEY')
+    if not api_key:
+        print("FRED_API_KEY not set — skipping Fed Funds download (the VAR will "
+              "fall back to SELIC alone). Get a free key at "
+              "https://fredaccount.stlouisfed.org/apikeys and put it in .env.")
+        return None
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+    url = (f"https://api.stlouisfed.org/fred/series/observations"
+           f"?series_id={series_id}&api_key={api_key}&file_type=json"
+           f"&observation_start={start_date:%Y-%m-%d}"
+           f"&observation_end={end_date:%Y-%m-%d}")
 
-    print(f"Requesting URL: {url}")
+    # Never print the URL: it carries the API key. Redact the series only.
+    print(f"Requesting FRED series {series_id} via the official API")
 
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, timeout=(10, 30))
         response.raise_for_status()
-        return parse_fred_csv(response.text)
+        return parse_fred_json(response.text)
 
     except Exception as e:
-        print(f"Error downloading FRED data: {e}")
+        # Exception messages (and the response URL) embed the api_key — redact it
+        # so the secret never lands in logs.
+        print(f"Error downloading FRED data: {str(e).replace(api_key, '***')}")
         if 'response' in locals():
             print(f"Response status: {response.status_code}")
             print(f"Response text snippet: {response.text[:200]}")
@@ -117,6 +149,9 @@ def main():
     # Create output directories if they don't exist
     for directory in ('data', 'assets'):
         os.makedirs(directory, exist_ok=True)
+
+    # Load FRED_API_KEY (and any other secrets) from a git-ignored .env, if present.
+    load_dotenv()
 
     # Download data
     print("Downloading data...")
