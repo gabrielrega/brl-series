@@ -1,14 +1,13 @@
 # Relatório de Análise de Séries Temporais: Previsão da Taxa de Câmbio BRL/USD
 
-*Atualizado em 2026-06-19 — dados do BCB de 2021-06-21 a 2026-06-19 (1256 observações).*
+*Atualizado em 2026-06-24 — dados do BCB de 2021-06-25 a 2026-06-23 (1254 observações).*
 
-> **Caveat da rodada de 2026-06-24:** ao re-executar `main.py` nesta data, o
-> download da Fed Funds (FRED, série `DFF`) falhou por *timeout* de leitura
-> (30 s) e o VAR caiu de volta à **SELIC pura**, como previsto no fallback. As
-> séries do BCB (USD/BRL e SELIC) baixaram normalmente. Os números do VAR desta
-> rodada, portanto, **não usam o diferencial `SELIC − Fed Funds`** — leia-os como
-> VAR com SELIC pura. (Falha de infraestrutura, não de código; o FRED não exige
-> API key e a indisponibilidade tem sido recorrente.)
+> **Nota da rodada de 2026-06-24 (FRED resolvido):** numa primeira execução nesta
+> data o download da Fed Funds via o antigo endpoint sem chave (`fredgraph.csv`)
+> travou por *timeout*, e o VAR caiu para a SELIC pura. A fonte foi migrada para a
+> **API oficial do FRED** (JSON, com chave gratuita), e os números do VAR abaixo já
+> usam o **diferencial `SELIC − Fed Funds`** completo — a forma teoricamente correta
+> da UIP. A Fed Funds observada está em ~3,63% a.a.
 
 ## Introdução
 
@@ -41,9 +40,10 @@ Modelos de **nível**:
 * **VAR bivariado (USD/BRL + juros):** motivado pela Paridade Descoberta de Juros
   (UIP). A UIP é sobre o **diferencial** de juros Brasil–EUA, então o modelo usa
   `SELIC − Fed Funds` quando a taxa americana (FRED, série `DFF`) está disponível,
-  caindo de volta à **SELIC pura** caso contrário. *Neste run a Fed Funds não foi
-  baixada, então os números abaixo são do VAR com a SELIC pura.* Inclui teste de
-  causalidade de Granger e funções de resposta a impulso.
+  caindo de volta à **SELIC pura** caso contrário. *Nesta rodada a Fed Funds foi
+  baixada da API oficial do FRED, então os números abaixo são do VAR com o
+  diferencial completo.* Inclui teste de causalidade de Granger e funções de
+  resposta a impulso.
 
 Modelo de **volatilidade**:
 
@@ -85,16 +85,17 @@ da janela de treino), nunca misturado à tabela de nível.
 Validação cruzada de **8 folds**, horizonte de 60 dias úteis. `DM vs RW` é o teste
 de Diebold-Mariano contra o random walk (negativo = melhor que o RW).
 
-| Modelo        | MAE    | MAPE   | RMSE   | DM vs RW | p     |
-|---------------|--------|--------|--------|----------|-------|
-| **Naive RW**  | 0.1278 | 0.0231 | 0.1567 | —        | —     |
-| ARIMA         | 0.1282 | 0.0231 | 0.1567 |  +0.107  | 0.915 |
-| ETS           | 0.1278 | 0.0231 | 0.1567 |  −1.207  | 0.228 |
-| Prophet       | 0.1929 | 0.0348 | 0.2370 |  +1.592  | 0.112 |
-| VAR (SELIC)   | 0.1344 | 0.0242 | 0.1659 |  +1.146  | 0.252 |
+| Modelo            | MAE    | MAPE   | RMSE   | DM vs RW | p     |
+|-------------------|--------|--------|--------|----------|-------|
+| **Naive RW**      | 0.1194 | 0.0216 | 0.1496 | —        | —     |
+| ARIMA             | 0.1205 | 0.0218 | 0.1503 |  +1.175  | 0.241 |
+| ETS               | 0.1194 | 0.0216 | 0.1496 |  −0.181  | 0.857 |
+| Prophet           | 0.1928 | 0.0349 | 0.2340 |  +1.692  | 0.091 |
+| VAR (SELIC−FedFunds) | 0.1271 | 0.0231 | 0.1599 | +1.233 | 0.218 |
 
 **Nenhum modelo bate o random walk de forma significativa** (todos com p ≫ 0,05).
-O ETS é numericamente idêntico ao RW; ARIMA empata; Prophet e VAR ficam atrás.
+O ETS é numericamente idêntico ao RW; ARIMA empata; Prophet e VAR ficam atrás —
+inclusive o VAR já com o diferencial de juros completo.
 
 ## Resultados — Volatilidade
 
@@ -102,8 +103,8 @@ GARCH(1,1) vs volatilidade constante, em pontos de volatilidade anualizada.
 
 | Modelo      | MAE    | MAPE   | RMSE   | DM vs CV | p     |
 |-------------|--------|--------|--------|----------|-------|
-| Const Vol   | 2.4158 | 0.2611 | 2.9103 | —        | —     |
-| GARCH (60d) | 1.9878 | 0.2001 | 2.3852 | −0.789   | 0.456 |
+| Const Vol   | 2.3162 | 0.2508 | 2.8542 | —        | —     |
+| GARCH (60d) | 1.9470 | 0.1933 | 2.2793 | −0.644   | 0.540 |
 
 No horizonte de 60 dias o GARCH é numericamente melhor, mas **não
 significativamente** — com apenas 8 folds o teste tem pouco poder. A história muda
@@ -112,12 +113,12 @@ janelas de teste e rende muito mais folds:
 
 | Horizonte | Folds | GARCH MAE | Const Vol MAE | DM vs CV | p         |
 |-----------|-------|-----------|---------------|----------|-----------|
-| **5 dias**  | 101 | 3.5446    | 4.4268        | **−5.044** | **0.000** |
-| 21 dias   | 24    | 2.2572    | 2.7397        | −1.281   | 0.213     |
-| 60 dias   | 8     | 1.9878    | 2.4158        | −0.789   | 0.456     |
+| **5 dias**  | 100 | 3.8350    | 4.6070        | **−4.089** | **0.000** |
+| 21 dias   | 23    | 2.5539    | 3.2092        | −1.663   | 0.111     |
+| 60 dias   | 8     | 1.9470    | 2.3162        | −0.644   | 0.540     |
 
 **Em 5 dias o GARCH bate a volatilidade constante de forma fortemente
-significativa** (DM −5,04, p < 0,001). O ganho some em 21 dias e 60 dias — o
+significativa** (DM −4,09, p < 0,001). O ganho some em 21 dias e 60 dias — o
 *clustering* de volatilidade paga no curto prazo e se dilui à medida que o
 horizonte cresce.
 
@@ -127,19 +128,19 @@ horizonte cresce.
   um passeio aleatório; modelos univariados raramente batem o ingênuo fora da
   amostra em horizontes de meses. O ETS ótimo literalmente colapsa para "prever o
   último valor".
-* **O VAR não ajuda fora da amostra — mesmo com sinal em amostra.** A SELIC
-  **Granger-causa** o USD/BRL *dentro* da amostra (p < 0,05), mas essa informação
-  **não se converte** em ganho de previsão detectável fora da amostra (UIP fraca):
-  o VAR fica até pior que o RW (MAE 0.1344 vs 0.1278). Por construção, o modelo
-  passa a usar o **diferencial SELIC − Fed Funds** quando a taxa americana está
-  disponível — a forma teoricamente correta da UIP —, mas neste run rodou com a
-  SELIC pura.
+* **O VAR não ajuda fora da amostra — mesmo com sinal em amostra.** O
+  **diferencial SELIC − Fed Funds Granger-causa** o USD/BRL *dentro* da amostra
+  (F 6,62, p 0,010), mas essa informação **não se converte** em ganho de previsão
+  detectável fora da amostra (UIP fraca): o VAR fica até pior que o RW (MAE 0.1271
+  vs 0.1194; DM +1,233, p 0,218). E isso já é o VAR na sua forma teoricamente
+  correta — com o **diferencial** de juros completo, não a SELIC pura —, então o
+  resultado nulo não é por falta da taxa americana.
 * **Volatilidade é onde há sinal real.** O GARCH é o **único modelo do projeto a
   vencer seu baseline com significância**, e faz isso justamente onde a teoria
   prevê: no curto prazo (5 dias), onde o *clustering* domina. Isso **não contradiz
   Meese-Rogoff** — prever *o quanto* a taxa oscila é um problema diferente de
   prever *para onde* ela vai. A volatilidade anualizada prevista para o próximo ano
-  é de ~12,4%, com persistência (α+β) ≈ 0,99 (choques decaem lentamente, típico de
+  é de ~12,25%, com persistência (α+β) ≈ 0,989 (choques decaem lentamente, típico de
   câmbio).
 
 > **Sensibilidade temporal:** o ranking de nível é instável entre janelas de dados
@@ -152,28 +153,28 @@ horizonte cresce.
 
 Além do back-test, cada modelo gera uma previsão *forward* de 252 dias úteis
 (~1 ano, até meados de junho/2027), salva em `assets/` (CSVs e gráficos). Partindo
-do último valor observado — **USD/BRL = 5.144 em 2026-06-19** — os pontos a 1 ano
+do último valor observado — **USD/BRL = 5.174 em 2026-06-23** — os pontos a 1 ano
 são:
 
-| Modelo        | Projeção 1 ano | IC 95%          | Leitura                                  |
-|---------------|----------------|-----------------|------------------------------------------|
-| ETS           | 5.14           | —               | plano (tendência amortecida → RW)        |
-| ARIMA         | 5.13           | 3.77 – 6.49     | plano, com incerteza enorme              |
-| VAR (SELIC)   | 5.17           | —               | quase plano; extrapola a SELIC p/ ~16%   |
-| Prophet       | 4.48           | 3.11 – 5.74     | aprecia o real — extrapolação arriscada  |
+| Modelo            | Projeção 1 ano | IC 95%          | Leitura                                  |
+|-------------------|----------------|-----------------|------------------------------------------|
+| ETS               | 5.17           | —               | plano (tendência amortecida → RW)        |
+| ARIMA             | 5.17           | 3.73 – 6.60     | plano, com incerteza enorme              |
+| VAR (SELIC−FedFunds) | 5.23        | —               | quase plano; diferencial estável ~12 p.p.|
+| Prophet           | 4.54           | 3.21 – 5.98     | aprecia o real — extrapolação arriscada  |
 
 **Como ler estas projeções — com cautela.** Dado que *nenhum* modelo de nível bate
 o random walk, a única projeção de nível realmente defensável é a do próprio
-passeio aleatório: **"daqui a um ano ≈ hoje", ou seja ~5,14**. Não por acaso, ETS,
+passeio aleatório: **"daqui a um ano ≈ hoje", ou seja ~5,17**. Não por acaso, ETS,
 ARIMA e VAR convergem para perto disso — apenas reproduzem o último valor com ruído.
-A divergência do **Prophet (4,48)** vem da sua extrapolação de tendência/
+A divergência do **Prophet (4,54)** vem da sua extrapolação de tendência/
 sazonalidade e **não deve ser tratada como sinal**: os intervalos de confiança a 1
 ano são largos a ponto de englobar tanto forte apreciação quanto forte depreciação
-(ARIMA: 3,77–6,49). Em outras palavras, a 1 ano a banda de incerteza é tão ampla
+(ARIMA: 3,73–6,60). Em outras palavras, a 1 ano a banda de incerteza é tão ampla
 que o ponto central é quase irrelevante.
 
 **A projeção forward que vale é a de volatilidade.** O GARCH projeta volatilidade
-anualizada de **~12,4%** para o próximo ano (subindo de leve, de ~12,3%),
+anualizada de **~12,25%** para o próximo ano (subindo de leve, de ~12,05%),
 consistente com a alta persistência estimada (α+β ≈ 0,99). Diferente do nível, essa
 é uma grandeza que o modelo demonstrou saber prever no curto prazo — e é a peça mais
 acionável das projeções (dimensionar risco, bandas, *stops*), não a aposta
@@ -185,7 +186,7 @@ Para o **nível** da BRL/USD, sob avaliação justa e contra um baseline, **o pa
 aleatório é tão bom ou melhor que qualquer um dos modelos testados** — incluindo o
 VAR com juros. Nenhum modelo univariado de nível justifica sua complexidade neste
 horizonte. Isso vale também para as **projeções forward**: a 1 ano, a melhor
-estimativa de nível é "≈ hoje" (~5,14), com bandas de incerteza largas demais para
+estimativa de nível é "≈ hoje" (~5,17), com bandas de incerteza largas demais para
 sustentar uma aposta direcional.
 
 O ganho concreto aparece ao **mudar o alvo da previsão**: prever **volatilidade** em
@@ -193,8 +194,8 @@ vez de nível. O GARCH(1,1) bate a volatilidade constante de forma significativa
 horizontes curtos (5 dias), realizando exatamente a recomendação que versões
 anteriores deste relatório deixavam como trabalho futuro.
 
-Próximos passos naturais: (i) rodar o VAR com o diferencial `SELIC − Fed Funds`
-completo (requer acesso ao FRED) e testar prazos de Treasury casados com a
-expectativa cambial; (ii) explorar o ganho do GARCH em horizontes curtos com mais
-profundidade. Recomenda-se reavaliar periodicamente — o desempenho varia com o
-tempo e as condições de mercado.
+Próximos passos naturais: (i) testar prazos de Treasury casados com a expectativa
+cambial (o diferencial `SELIC − Fed Funds` de overnight já está no VAR desde esta
+rodada); (ii) explorar o ganho do GARCH em horizontes curtos com mais profundidade.
+Recomenda-se reavaliar periodicamente — o desempenho varia com o tempo e as
+condições de mercado.
