@@ -2,6 +2,14 @@
 
 *Atualizado em 2026-06-19 — dados do BCB de 2021-06-21 a 2026-06-19 (1256 observações).*
 
+> **Caveat da rodada de 2026-06-24:** ao re-executar `main.py` nesta data, o
+> download da Fed Funds (FRED, série `DFF`) falhou por *timeout* de leitura
+> (30 s) e o VAR caiu de volta à **SELIC pura**, como previsto no fallback. As
+> séries do BCB (USD/BRL e SELIC) baixaram normalmente. Os números do VAR desta
+> rodada, portanto, **não usam o diferencial `SELIC − Fed Funds`** — leia-os como
+> VAR com SELIC pura. (Falha de infraestrutura, não de código; o FRED não exige
+> API key e a indisponibilidade tem sido recorrente.)
+
 ## Introdução
 
 Este relatório compara o desempenho de vários modelos de previsão para a taxa de
