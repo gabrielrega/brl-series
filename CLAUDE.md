@@ -14,7 +14,7 @@ Managed with [uv](https://docs.astral.sh/uv/); deps pinned in `requirements.txt`
 ```bash
 uv venv && uv pip install -r requirements.txt
 python main.py        # full pipeline: download + all models + comparison tables
-python test_models.py # offline sanity suite (no network), 21 assertions
+python test_models.py # offline sanity suite (no network), 10 test functions
 ```
 
 `main.py` needs network (BCB API). `test_models.py` runs on synthetic data plus

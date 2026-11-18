@@ -15,3 +15,15 @@ assets/
 
 # Ignore secrets (FRED API key etc.)
 .env
+# Other env files (keep the template)
+.env.*
+!.env.example
+
+# Build artifacts / misc
+dist/
+build/
+node_modules/
+*.egg-info/
+.ipynb_checkpoints/
+*.parquet
+*.xlsx
