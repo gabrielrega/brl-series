@@ -6,6 +6,15 @@ single shared cross-validation so the comparison is honest. The headline result
 is negative and intentional: **no model significantly beats a random walk**
 (Meese-Rogoff holds for daily FX).
 
+## Ficha
+
+- **Pergunta**: Algum modelo prevê o BRL/USD diário melhor que o passeio aleatório?
+- **Status**: v0.2.0, ativo. Resultado: nenhum bate o RW de forma significativa (8 folds + Diebold-Mariano).
+- **Entradas**: BRL/USD diário da API do BCB (cache em `data/usd_brl_history.csv`).
+- **Saídas**: Tabelas de comparação de modelos no mesmo cross-validation (`main.py`).
+- **Rodar**: `python main.py`; testes `python test_models.py`.
+- **Pronto quando**: Todos os modelos avaliados nos mesmos folds, com DM contra o RW, e `test_models.py` passando.
+
 ## Environment & commands
 
 Managed with [uv](https://docs.astral.sh/uv/); deps pinned in `requirements.txt`
