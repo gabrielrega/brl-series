@@ -6,6 +6,16 @@ versionamento conforme [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-11-27
+
+Resultado (regra 6): o VAR passa da SELIC pura ao diferencial SELIC − Fed Funds.
+Rodadas do `RELATORIO.md`: 2026-06-19 (SELIC pura, 1.256 obs. até 19/06) →
+2026-06-24 (diferencial, 1.254 obs. até 23/06). As janelas de dados não são as
+mesmas, então a diferença não é só efeito da troca. MAE 0,1344 → 0,1271 (relativo
+ao RW: 1,052 → 1,064), RMSE 0,1659 → 0,1599, DM contra o RW +1,146 (p 0,252) →
++1,233 (p 0,218); projeção a 1 ano 5,17 → 5,23. Conclusão inalterada: o VAR não
+bate o passeio aleatório.
+
 ### Modificado
 - **Fonte da Fed Funds migrada para a API oficial do FRED** (JSON,
   `api.stlouisfed.org/fred/series/observations`) em `download_fred_data`. O

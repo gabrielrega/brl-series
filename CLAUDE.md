@@ -9,7 +9,7 @@ is negative and intentional: **no model significantly beats a random walk**
 ## Ficha
 
 - **Pergunta**: Algum modelo prevê o BRL/USD diário melhor que o passeio aleatório?
-- **Status**: v0.2.0, ativo. Resultado: nenhum bate o RW de forma significativa (8 folds + Diebold-Mariano).
+- **Status**: v0.3.0, ativo. Resultado: nenhum bate o RW de forma significativa (8 folds + Diebold-Mariano).
 - **Entradas**: BRL/USD diário da API do BCB (cache em `data/usd_brl_history.csv`).
 - **Saídas**: Tabelas de comparação de modelos no mesmo cross-validation (`main.py`).
 - **Rodar**: `python main.py`; testes `python test_models.py`.
@@ -102,8 +102,9 @@ compared to a constant-vol baseline — never mixed into the level table.
 
 ## Findings (honest caveats — keep them honest)
 
-With 8 folds + DM, no level model significantly beats the random walk (VAR's
-edge is noise: DM −0.166, p 0.868). SELIC Granger-causes USD/BRL in-sample
+With 8 folds + DM, no level model significantly beats the random walk (the VAR
+with the SELIC − Fed Funds differential is even worse than the RW: DM +1.233,
+p 0.218, run of 2026-06-24 in `RELATORIO.md`). SELIC Granger-causes USD/BRL in-sample
 (p 0.008) but that doesn't convert to detectable out-of-sample gains (weak UIP).
 At the 60-day horizon GARCH lands numerically below constant-vol but not
 significantly (p 0.615). With only ~8 folds the DM test has low power: "not
